@@ -1,0 +1,7 @@
+__pycache__
+*.pyc
+.pyc/
+.env
+*.log
+data/*.json
+!data/broadcast_groups.json.example
