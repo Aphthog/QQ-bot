@@ -1,6 +1,7 @@
 from nonebot import on_command, require, get_bot
 from nonebot.adapters import Event
-from nonebot.adapters.llonebot import MessageSegment
+from nonebot.adapters.onebot.v11 import MessageSegment
+import nonebot
 import json
 import os
 from pathlib import Path

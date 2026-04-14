@@ -1,7 +1,6 @@
 nonebot2
-nonebot-plugin-llonebot
-nonebot-plugin-scheduler
+nonebot-adapter-onebot
 nonebot-plugin-apscheduler
+websockets
 httpx
-aiohttp
 python-dotenv

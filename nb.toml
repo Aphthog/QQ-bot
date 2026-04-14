@@ -2,8 +2,9 @@
 name = "qq-bot"
 version = "0.1.0"
 
-[plugin]
-runtime_plugins = ["nonebot.plugins.llonebot"]
-
 [adapter]
-name = "llonebot"
+name = "onebot"
+
+[plugin]
+# 加载本地插件目录
+plugins = ["plugins"]

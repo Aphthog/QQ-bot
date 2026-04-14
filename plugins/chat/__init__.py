@@ -1,6 +1,6 @@
 from nonebot import on_message, on_command
 from nonebot.adapters import Event
-from nonebot.adapters.llonebot import MessageSegment, At, Message
+from nonebot.adapters.onebot.v11 import MessageSegment
 import os
 import json
 
