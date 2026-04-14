@@ -1,20 +1,21 @@
-version: '3.8'
+version: "3"
+
 services:
-  nonebot:
+  qq-bot:
     build: .
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    env_file: .env
+    restart: always
+    environment:
+      - LLM_PROVIDER=deepseek
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
     volumes:
       - ./data:/app/data
-    depends_on:
-      redis:
-        condition: service_healthy
-  redis:
-    image: redis:alpine
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      retries: 5
+
+  llonebot:
+    image: ghcr.io/nonebot/llonebot:latest
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - QQ_ACCOUNT=${QQ_ACCOUNT}
+      - QQ_PASSWORD=${QQ_PASSWORD}
+      - QQ_PROTOCOL=android

@@ -1,0 +1,9 @@
+[nonebot]
+name = "qq-bot"
+version = "0.1.0"
+
+[plugin]
+runtime_plugins = ["nonebot.plugins.llonebot"]
+
+[adapter]
+name = "llonebot"
