@@ -3,8 +3,7 @@ name = "qq-bot"
 version = "0.1.0"
 
 [adapter]
-name = "onebot"
+name = "nonebot.adapters.onebot"
 
 [plugin]
-# 加载本地插件目录
 plugins = ["plugins"]
