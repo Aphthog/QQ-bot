@@ -32,6 +32,8 @@ class DeepSeekAdapter(BaseLLMAdapter):
             "messages": messages,
             "stream": False,
         }
+        if max_tokens := kwargs.get("max_tokens"):
+            payload["max_tokens"] = max_tokens
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",

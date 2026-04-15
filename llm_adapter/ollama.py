@@ -35,6 +35,8 @@ class OllamaAdapter(BaseLLMAdapter):
         if image:
             import base64
             payload["images"] = [base64.b64encode(image).decode()]
+        if max_tokens := kwargs.get("max_tokens"):
+            payload.setdefault("options", {})["max_tokens"] = max_tokens
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(f"{self.base_url}/api/chat", json=payload)

@@ -65,7 +65,6 @@ _SEARCH_TRIGGERS = [
 def should_search(query: str) -> bool:
     """判断是否需要联网搜索"""
     enabled = os.getenv("ENABLE_WEB_SEARCH", "false")
-    print(f"[SEARCH DEBUG] ENABLE_WEB_SEARCH={repr(enabled)}", flush=True)
     if enabled.lower() != "true":
         return False
     q = query.lower()
