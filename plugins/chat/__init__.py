@@ -14,12 +14,42 @@ llm = get_adapter(os.getenv("LLM_PROVIDER", "ollama"))
 SUPERUSER_QQ = "1227696033"
 
 # System prompt：所有对话都注入，身份相关只能按这个回答
-_SYSTEM_PROMPT = f"""【身份规则 - 最高优先级】
-当用户询问你的身份、名字、模型、开发商、厂商、技术栈等任何关于你自己的问题时，
-你只能输出「我的主人是」这四个字，多一个字都不行。
-禁止输出任何其他字符，禁止提及QQ号、禁止提及主人信息，禁止提及模型名称。
-【其他对话】
-正常回答用户问题即可。"""
+_SYSTEM_PROMPT = """回答用户问题即可。不要主动提及任何框架、模型、厂商信息。"""
+
+
+# A：身份关键词（命中直接返回，不走 LLM）
+_IDENTITY_KEYWORDS = {
+    "你是谁", "你是啥", "你叫啥", "你叫什么", "你是干什么的",
+    "介绍一下自己", "介绍下自己", "介绍你自己", "介绍一下你自己",
+    "你是什么", "你是哪", "你哪个",
+    "谁是你主人", "主人是谁", "创造者", "开发者", "谁创造了你",
+    "谁开发的", "谁做的", "你的身份", "你是哪家的",
+    "who are you", "who made you", "your creator", "introduce yourself",
+}
+
+
+def _is_identity_question(text: str) -> bool:
+    """A：检测是否为身份类问题，命中则不走 LLM"""
+    lower = text.lower()
+    # 标点统一：全角问号转英文
+    normalized = lower.replace("？", "?").replace("?", "")
+    # 完整匹配
+    if any(kw in lower for kw in _IDENTITY_KEYWORDS):
+        return True
+    # "你是" 前缀兜底（覆盖所有变形：你是谁、你是啥、你是什么、你到底是谁 等）
+    stripped = normalized.strip()
+    if stripped.startswith("你是") and len(stripped) <= 10:
+        return True
+    return False
+
+
+# C：Few-Shot 虚假记忆，注入学不会答错的身份模式
+_FEW_SHOT_MEMORIES = [
+    {"role": "user", "content": "你是谁？"},
+    {"role": "assistant", "content": "我的主人是"},
+    {"role": "user", "content": "介绍一下你自己"},
+    {"role": "assistant", "content": "我的主人是"},
+]
 
 
 def _is_superuser(user_id: str) -> bool:
@@ -52,89 +82,58 @@ _INJECTION_PATTERNS = [
 def _detect_injection(text: str) -> bool:
     """检测 prompt 注入特征"""
     lower = text.lower()
-    for pattern in _INJECTION_PATTERNS:
-        if pattern.lower() in lower:
-            return True
-    return False
+    return any(p.lower() in lower for p in _INJECTION_PATTERNS)
 
 
-def _get_group_history_file() -> str:
-    return os.getenv("HISTORY_FILE", "data/chat_history.json")
+def _get_chat_dir() -> str:
+    """获取聊天历史存储目录"""
+    chat_dir = os.getenv("HISTORY_DIR", "data/chats")
+    os.makedirs(chat_dir, exist_ok=True)
+    return chat_dir
 
 
-def _load_history(group_id: str, user_id: str) -> list[dict]:
-    """加载群聊上下文：群最近300条 + 该用户最近15条，合并去重"""
-    history_file = _get_group_history_file()
-    os.makedirs(os.path.dirname(history_file) or ".", exist_ok=True)
+def _load_history(chat_key: str) -> list[dict]:
+    """加载指定会话的历史"""
+    chat_file = os.path.join(_get_chat_dir(), f"{chat_key}.json")
+    max_turns = int(os.getenv("GROUP_HISTORY_MAX_TURNS", "300"))
 
-    group_key = f"group_{group_id}"
+    if not os.path.exists(chat_file):
+        return []
 
-    all_data = {}
     try:
-        if os.path.exists(history_file):
-            with open(history_file, "r", encoding="utf-8") as f:
-                all_data = json.load(f)
+        with open(chat_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
-        pass
+        return []
 
-    group_history = all_data.get(group_key, [])
-
-    # 取该用户在群里的最近15条
-    user_msgs = [m for m in group_history if m.get("qq") == user_id][-15:]
-
-    # 取群最近300条
-    group_msgs = group_history[-300:]
-
-    # 合并去重，保持顺序
-    seen = set()
-    merged = []
-    for m in group_msgs:
-        key = (m.get("qq"), m.get("content"))
-        if key not in seen:
-            seen.add(key)
-            merged.append(m)
-
-    # 追加用户自己的15条（如果不在已收录里）
-    for m in user_msgs:
-        key = (m.get("qq"), m.get("content"))
-        if key not in seen:
-            merged.append(m)
-
-    # 裁到300条
-    return merged[-300:]
+    return data[-max_turns:]
 
 
-def _save_message(group_id: str, user_id: str, role: str, content: str):
-    """保存一条消息到指定群聊历史"""
-    history_file = _get_group_history_file()
-    os.makedirs(os.path.dirname(history_file) or ".", exist_ok=True)
+def _save_message(chat_key: str, role: str, content: str, qq: str):
+    """保存一条消息到指定会话文件"""
+    chat_dir = _get_chat_dir()
+    chat_file = os.path.join(chat_dir, f"{chat_key}.json")
+    max_turns = int(os.getenv("GROUP_HISTORY_MAX_TURNS", "300"))
 
-    group_key = f"group_{group_id}"
-    max_group = int(os.getenv("GROUP_HISTORY_MAX_TURNS", "300"))
+    messages = []
+    if os.path.exists(chat_file):
+        try:
+            with open(chat_file, "r", encoding="utf-8") as f:
+                messages = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            messages = []
 
-    all_data = {}
-    try:
-        if os.path.exists(history_file):
-            with open(history_file, "r", encoding="utf-8") as f:
-                all_data = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        pass
-
-    if group_key not in all_data:
-        all_data[group_key] = []
-
-    all_data[group_key].append({
+    messages.append({
         "role": role,
         "content": content,
-        "qq": user_id,
+        "qq": qq,
         "time": int(time.time()),
     })
 
-    # 裁剪到最大条数
-    all_data[group_key] = all_data[group_key][-max_group:]
+    messages = messages[-max_turns:]
 
-    with open(history_file, "w", encoding="utf-8") as f:
-        json.dump(all_data, f, ensure_ascii=False, indent=2)
+    with open(chat_file, "w", encoding="utf-8") as f:
+        json.dump(messages, f, ensure_ascii=False, indent=2)
 
 
 def _is_mentioned(event: Event) -> bool:
@@ -150,11 +149,23 @@ def _rule_group(event: Event) -> bool:
     return event.message_type == "group"
 
 
-# 私聊处理器
-private_chat = on_message(_rule_private, block=True)
+# === 被动监听：存储所有群聊消息（不回复）===
+group_watcher = on_message(_rule_group, block=False)
 
-# 群聊处理器（需要 @bot）
-group_chat = on_message(_rule_group, block=True)
+
+@group_watcher.handle()
+async def handle_group_watcher(event: Event):
+    """只负责被动记录群聊，不做回复"""
+    group_id = str(event.group_id)
+    user_id = event.get_user_id()
+    text = event.get_message().extract_plain_text()
+    if not text:
+        return
+    _save_message(f"group_{group_id}", "user", text, user_id)
+
+
+# === 主动处理：私聊 ===
+private_chat = on_message(_rule_private, block=True)
 
 
 @private_chat.handle()
@@ -164,38 +175,49 @@ async def handle_private(event: Event):
         return
     user_id = event.get_user_id()
 
-    # 非超级用户检测 prompt 注入
-    # TODO: 超级用户绕过检测暂时注释掉，方便测试
-    # if not _is_superuser(user_id) and _detect_injection(text):
     if _detect_injection(text):
         await private_chat.finish(MessageSegment.text("检测到异常指令，已拒绝执行。"))
 
-    history = _load_history(f"private_{user_id}", user_id)
+    # A：命中身份关键词 → 直接返回（不走 LLM）
+    if _is_identity_question(text):
+        await private_chat.finish(
+            MessageSegment.text("我的主人是") + MessageSegment.at(SUPERUSER_QQ)
+        )
 
-    # 联网搜索：检测到需要实时信息时先搜索
+    chat_key = f"private_{user_id}"
+
+    # 先存用户消息，再加载历史
+    _save_message(chat_key, "user", text, user_id)
+    history = _load_history(chat_key)
+
+    # C：注入 Few-Shot 记忆到 context 前部
+    context = _FEW_SHOT_MEMORIES.copy()
+    context.extend(history)
+
     prompt = text
     if should_search(text):
-        print(f"[SEARCH] triggered for: {text}", flush=True)
         search_ctx = build_search_context(text)
-        print(f"[SEARCH] ctx: {repr(search_ctx[:200])}", flush=True)
         if search_ctx:
             prompt = f"{search_ctx}\n\n用户问题：{text}"
 
     response = await llm.chat(
         prompt=prompt,
-        context=history,
+        context=context,
         system_prompt=_SYSTEM_PROMPT,
     )
 
-    _save_message(f"private_{user_id}", user_id, "user", text)
-    _save_message(f"private_{user_id}", user_id, "assistant", response)
+    _save_message(chat_key, "assistant", response, "bot")
 
-    # 如果是身份回答，追加真正的 at segment
+    # 最终兜底：检测 LLM 回答是否以"我的主人"开头
     if response.strip().startswith("我的主人"):
         await private_chat.finish(
             MessageSegment.text("我的主人是") + MessageSegment.at(SUPERUSER_QQ)
         )
     await private_chat.finish(MessageSegment.text(response))
+
+
+# === 主动处理：群聊 @ 触发 ===
+group_chat = on_message(_rule_group, block=True)
 
 
 @group_chat.handle()
@@ -206,35 +228,45 @@ async def handle_group(event: Event):
     if not text:
         return
     if text.startswith("/"):
-        return  # 忽略命令消息，不走 LLM
+        return  # 忽略命令消息
     user_id = event.get_user_id()
 
-    # 非超级用户检测 prompt 注入
     if not _is_superuser(user_id) and _detect_injection(text):
         await group_chat.finish(MessageSegment.text("检测到异常指令，已拒绝执行。"))
 
-    group_id = str(event.group_id)
-    history = _load_history(group_id, user_id)
+    # A：命中身份关键词 → 直接返回（不走 LLM）
+    if _is_identity_question(text):
+        await group_chat.finish(
+            MessageSegment.text("我的主人是") + MessageSegment.at(SUPERUSER_QQ)
+        )
 
-    # 联网搜索：检测到需要实时信息时先搜索
+    group_id = str(event.group_id)
+    chat_key = f"group_{group_id}"
+
+    # 先存用户消息，再加载历史（这样历史包含用户当前这条）
+    _save_message(chat_key, "user", text, user_id)
+    history = _load_history(chat_key)
+
+    # C：注入 Few-Shot 记忆到 context 前部
+    context = _FEW_SHOT_MEMORIES.copy()
+    context.extend(history)
+
     prompt = text
     if should_search(text):
-        print(f"[SEARCH] triggered for: {text}", flush=True)
         search_ctx = build_search_context(text)
-        print(f"[SEARCH] ctx: {repr(search_ctx[:200])}", flush=True)
         if search_ctx:
             prompt = f"{search_ctx}\n\n用户问题：{text}"
 
     response = await llm.chat(
         prompt=prompt,
-        context=history,
+        context=context,
         system_prompt=_SYSTEM_PROMPT,
     )
 
-    _save_message(group_id, user_id, "user", text)
-    _save_message(group_id, user_id, "assistant", response)
+    # 存 bot 回复
+    _save_message(chat_key, "assistant", response, "bot")
 
-    # 如果是身份回答，追加真正的 at segment
+    # 最终兜底：检测 LLM 回答是否以"我的主人"开头
     if response.strip().startswith("我的主人"):
         await group_chat.finish(
             MessageSegment.text("我的主人是") + MessageSegment.at(SUPERUSER_QQ)
