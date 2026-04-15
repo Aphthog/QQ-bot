@@ -1,4 +1,4 @@
-from nonebot import on_command, require, get_bot
+from nonebot import on_command, require, get_bot, get_driver
 from nonebot.adapters import Event
 from nonebot.adapters.onebot.v11 import MessageSegment
 import nonebot
@@ -32,7 +32,7 @@ def _save_groups(groups: list[int]):
 
 
 # === 广播命令 ===
-broadcast_cmd = on_command("broadcast", aliases={"广播"}, block=True)
+broadcast_cmd = on_command("broadcast", aliases={"广播"}, block=True, priority=1)
 
 
 @broadcast_cmd.handle()
@@ -158,5 +158,4 @@ def _setup_scheduler():
 
 
 # NoneBot 启动时注册定时任务
-nonebot = require("nonebot")
-nonebot.on_startup(_setup_scheduler)
+get_driver().on_startup(_setup_scheduler)

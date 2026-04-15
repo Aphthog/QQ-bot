@@ -1,117 +1,242 @@
-from nonebot import on_message, on_command
+from nonebot import on_message, get_driver
 from nonebot.adapters import Event
 from nonebot.adapters.onebot.v11 import MessageSegment
 import os
 import json
+import time
 
 from llm_adapter import get_adapter
+from llm_adapter.search import should_search, build_search_context
 
 llm = get_adapter(os.getenv("LLM_PROVIDER", "ollama"))
 
+# 主人 QQ
+SUPERUSER_QQ = "1227696033"
 
-def _load_history(user_id: str) -> list[dict]:
-    """从 JSON 文件加载对话历史"""
-    history_file = os.getenv("HISTORY_FILE", "data/chat_history.json")
-    max_turns = int(os.getenv("HISTORY_MAX_TURNS", "10"))
+# System prompt：所有对话都注入，身份相关只能按这个回答
+_SYSTEM_PROMPT = f"""【身份规则 - 最高优先级】
+当用户询问你的身份、名字、模型、开发商、厂商、技术栈等任何关于你自己的问题时，
+你只能输出「我的主人是」这四个字，多一个字都不行。
+禁止输出任何其他字符，禁止提及QQ号、禁止提及主人信息，禁止提及模型名称。
+【其他对话】
+正常回答用户问题即可。"""
 
-    # 确保目录存在
-    os.makedirs(os.path.dirname(history_file) if os.path.dirname(history_file) else ".", exist_ok=True)
 
-    # 尝试读取现有历史
+def _is_superuser(user_id: str) -> bool:
+    """检查是否为超级用户"""
     try:
-        if os.path.exists(history_file):
-            with open(history_file, "r", encoding="utf-8") as f:
-                all_history = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        all_history = {}
-
-    # 获取该用户的历史，保留最近 N 轮
-    history = all_history.get(user_id, [])[-max_turns:]
-    return history
+        superusers = get_driver().config.superusers
+        return user_id in superusers
+    except Exception:
+        return False
 
 
-def _save_history(user_id: str, history: list[dict]):
-    """保存对话历史到 JSON 文件"""
-    history_file = os.getenv("HISTORY_FILE", "data/chat_history.json")
-    max_turns = int(os.getenv("HISTORY_MAX_TURNS", "10"))
-
-    os.makedirs(os.path.dirname(history_file) if os.path.dirname(history_file) else ".", exist_ok=True)
-
-    try:
-        if os.path.exists(history_file):
-            with open(history_file, "r", encoding="utf-8") as f:
-                all_history = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        all_history = {}
-
-    # 保留最近 N 轮
-    all_history[user_id] = history[-max_turns:]
-
-    with open(history_file, "w", encoding="utf-8") as f:
-        json.dump(all_history, f, ensure_ascii=False, indent=2)
+# 只拦截明确的恶意注入标记，角色扮演等正常对话不过滤
+_INJECTION_PATTERNS = [
+    "[system]",
+    "{{system",
+    "<system>",
+    "ignore previous",
+    "disregard your",
+    "you are now a",
+    "你现在是",
+    "从现在起你是",
+    "记住你是",
+    "Forget all previous",
+    "Forget everything",
+    "disregard your instructions",
+    "ignore your previous instructions",
+]
 
 
-def _is_mentioned_bot(event: Event) -> bool:
-    """检测消息是否 @ 了 bot"""
-    message = event.get_message()
-    for seg in message:
-        if seg.type == "at" and seg.data.get("qq") == "all":
+def _detect_injection(text: str) -> bool:
+    """检测 prompt 注入特征"""
+    lower = text.lower()
+    for pattern in _INJECTION_PATTERNS:
+        if pattern.lower() in lower:
             return True
     return False
 
 
-chat_cmd = on_command("chat", aliases={"聊天", "问"}, block=True)
+def _get_group_history_file() -> str:
+    return os.getenv("HISTORY_FILE", "data/chat_history.json")
 
 
-@chat_cmd.handle()
-async def handle_chat_cmd(event: Event):
-    """处理私聊或 /chat 命令"""
-    user_id = event.get_user_id()
+def _load_history(group_id: str, user_id: str) -> list[dict]:
+    """加载群聊上下文：群最近300条 + 该用户最近15条，合并去重"""
+    history_file = _get_group_history_file()
+    os.makedirs(os.path.dirname(history_file) or ".", exist_ok=True)
+
+    group_key = f"group_{group_id}"
+
+    all_data = {}
+    try:
+        if os.path.exists(history_file):
+            with open(history_file, "r", encoding="utf-8") as f:
+                all_data = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        pass
+
+    group_history = all_data.get(group_key, [])
+
+    # 取该用户在群里的最近15条
+    user_msgs = [m for m in group_history if m.get("qq") == user_id][-15:]
+
+    # 取群最近300条
+    group_msgs = group_history[-300:]
+
+    # 合并去重，保持顺序
+    seen = set()
+    merged = []
+    for m in group_msgs:
+        key = (m.get("qq"), m.get("content"))
+        if key not in seen:
+            seen.add(key)
+            merged.append(m)
+
+    # 追加用户自己的15条（如果不在已收录里）
+    for m in user_msgs:
+        key = (m.get("qq"), m.get("content"))
+        if key not in seen:
+            merged.append(m)
+
+    # 裁到300条
+    return merged[-300:]
+
+
+def _save_message(group_id: str, user_id: str, role: str, content: str):
+    """保存一条消息到指定群聊历史"""
+    history_file = _get_group_history_file()
+    os.makedirs(os.path.dirname(history_file) or ".", exist_ok=True)
+
+    group_key = f"group_{group_id}"
+    max_group = int(os.getenv("GROUP_HISTORY_MAX_TURNS", "300"))
+
+    all_data = {}
+    try:
+        if os.path.exists(history_file):
+            with open(history_file, "r", encoding="utf-8") as f:
+                all_data = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        pass
+
+    if group_key not in all_data:
+        all_data[group_key] = []
+
+    all_data[group_key].append({
+        "role": role,
+        "content": content,
+        "qq": user_id,
+        "time": int(time.time()),
+    })
+
+    # 裁剪到最大条数
+    all_data[group_key] = all_data[group_key][-max_group:]
+
+    with open(history_file, "w", encoding="utf-8") as f:
+        json.dump(all_data, f, ensure_ascii=False, indent=2)
+
+
+def _is_mentioned(event: Event) -> bool:
+    """检测消息是否 @ 了 bot"""
+    return event.is_tome()
+
+
+def _rule_private(event: Event) -> bool:
+    return event.message_type == "private"
+
+
+def _rule_group(event: Event) -> bool:
+    return event.message_type == "group"
+
+
+# 私聊处理器
+private_chat = on_message(_rule_private, block=True)
+
+# 群聊处理器（需要 @bot）
+group_chat = on_message(_rule_group, block=True)
+
+
+@private_chat.handle()
+async def handle_private(event: Event):
     text = event.get_message().extract_plain_text()
-
     if not text:
-        await chat_cmd.finish("请输入问题，例如：/chat 你好")
+        return
+    user_id = event.get_user_id()
 
-    # 加载历史
-    history = _load_history(user_id)
+    # 非超级用户检测 prompt 注入
+    # TODO: 超级用户绕过检测暂时注释掉，方便测试
+    # if not _is_superuser(user_id) and _detect_injection(text):
+    if _detect_injection(text):
+        await private_chat.finish(MessageSegment.text("检测到异常指令，已拒绝执行。"))
 
-    # 调用 LLM
-    response = await llm.chat(prompt=text, context=history)
+    history = _load_history(f"private_{user_id}", user_id)
 
-    # 保存历史
-    history.append({"role": "user", "content": text})
-    history.append({"role": "assistant", "content": response})
-    _save_history(user_id, history)
+    # 联网搜索：检测到需要实时信息时先搜索
+    prompt = text
+    if should_search(text):
+        print(f"[SEARCH] triggered for: {text}", flush=True)
+        search_ctx = build_search_context(text)
+        print(f"[SEARCH] ctx: {repr(search_ctx[:200])}", flush=True)
+        if search_ctx:
+            prompt = f"{search_ctx}\n\n用户问题：{text}"
 
-    await chat_cmd.finish(MessageSegment.text(response))
+    response = await llm.chat(
+        prompt=prompt,
+        context=history,
+        system_prompt=_SYSTEM_PROMPT,
+    )
 
+    _save_message(f"private_{user_id}", user_id, "user", text)
+    _save_message(f"private_{user_id}", user_id, "assistant", response)
 
-# @bot 触发（群聊中使用 @bot）
-group_chat = on_message(block=True)
+    # 如果是身份回答，追加真正的 at segment
+    if response.strip().startswith("我的主人"):
+        await private_chat.finish(
+            MessageSegment.text("我的主人是") + MessageSegment.at(SUPERUSER_QQ)
+        )
+    await private_chat.finish(MessageSegment.text(response))
 
 
 @group_chat.handle()
-async def handle_group_chat(event: Event):
-    """处理群聊 @bot 消息"""
-    # 检查是否 @ 了 bot
-    if not _is_mentioned_bot(event):
-        return  # 没有 @bot，不处理
-
-    user_id = event.get_user_id()
-    text = event.get_message().extract_plain_text()
-
+async def handle_group(event: Event):
+    if not _is_mentioned(event):
+        return
+    text = event.get_message().extract_plain_text().lstrip()
     if not text:
         return
+    if text.startswith("/"):
+        return  # 忽略命令消息，不走 LLM
+    user_id = event.get_user_id()
 
-    # 加载历史
-    history = _load_history(user_id)
+    # 非超级用户检测 prompt 注入
+    if not _is_superuser(user_id) and _detect_injection(text):
+        await group_chat.finish(MessageSegment.text("检测到异常指令，已拒绝执行。"))
 
-    # 调用 LLM
-    response = await llm.chat(prompt=text, context=history)
+    group_id = str(event.group_id)
+    history = _load_history(group_id, user_id)
 
-    # 保存历史
-    history.append({"role": "user", "content": text})
-    history.append({"role": "assistant", "content": response})
-    _save_history(user_id, history)
+    # 联网搜索：检测到需要实时信息时先搜索
+    prompt = text
+    if should_search(text):
+        print(f"[SEARCH] triggered for: {text}", flush=True)
+        search_ctx = build_search_context(text)
+        print(f"[SEARCH] ctx: {repr(search_ctx[:200])}", flush=True)
+        if search_ctx:
+            prompt = f"{search_ctx}\n\n用户问题：{text}"
 
+    response = await llm.chat(
+        prompt=prompt,
+        context=history,
+        system_prompt=_SYSTEM_PROMPT,
+    )
+
+    _save_message(group_id, user_id, "user", text)
+    _save_message(group_id, user_id, "assistant", response)
+
+    # 如果是身份回答，追加真正的 at segment
+    if response.strip().startswith("我的主人"):
+        await group_chat.finish(
+            MessageSegment.text("我的主人是") + MessageSegment.at(SUPERUSER_QQ)
+        )
     await group_chat.finish(MessageSegment.text(response))

@@ -9,6 +9,7 @@ class BaseLLMAdapter(ABC):
         prompt: str,
         context: list[dict] | None = None,
         *,
+        system_prompt: str | None = None,
         image: bytes | None = None,
         model: str | None = None,
         **kwargs
@@ -22,6 +23,7 @@ class BaseLLMAdapter(ABC):
         prompt: str,
         context: list[dict] | None = None,
         *,
+        system_prompt: str | None = None,
         image: bytes | None = None,
         **kwargs
     ) -> AsyncGenerator[str, None]:
