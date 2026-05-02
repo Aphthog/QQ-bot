@@ -23,7 +23,7 @@ Status: IMPLEMENTATION
 |------|------|
 | 消息协议 | QQ (LLOneBot / OneBot V11) |
 | 核心框架 | NoneBot2 (Python 3.10+) |
-| LLM 适配层 | Ollama / DeepSeek / OpenAI |
+| LLM 适配层 | LongCat（文字+图片理解）/ Pollinations（图片生成） |
 | 定时任务 | nonebot-plugin-scheduler / APScheduler |
 | 会话存储 | JSON 文件 (可选 Redis) |
 | 部署 | Docker + Docker Compose |
@@ -60,10 +60,10 @@ Status: IMPLEMENTATION
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐  │
 │  │  LLM ADAPTER (核心扩展层)                            │  │
-│  │  ┌───────────┐  ┌───────────┐  ┌───────────────┐   │  │
-│  │  │ Ollama    │  │ DeepSeek  │  │ OpenAI/...   │   │  │
-│  │  │ (本地)    │  │ (云端)    │  │ (可扩展)     │   │  │
-│  │  └───────────┘  └───────────┘  └───────────────┘   │  │
+│  │  ┌───────────┐  ┌───────────────────┐               │  │
+│  │  │ LongCat   │  │ Pollinations       │               │  │
+│  │  │ (云端)    │  │ (免费生图)          │               │  │
+│  │  └───────────┘  └───────────────────┘               │  │
 │  │                                                      │  │
 │  │  统一接口: chat(prompt, context, *, image=None)     │  │
 │  └─────────────────────────────────────────────────────┘  │
@@ -211,11 +211,10 @@ class OllamaAdapter(BaseLLMAdapter):
 **环境变量配置：**
 | 变量 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `OLLAMA_BASE_URL` | string | `http://localhost:11434` | Ollama 服务地址 |
-| `OLLAMA_MODEL` | string | (必填) | 模型 ID |
-| `OLLAMA_TIMEOUT` | int | `120` | 超时时间（秒）|
+| `LONGCAT_API_KEY` | string | (必填) | 龙猫 API Key |
+| `LONGCAT_MODEL` | string | `LongCat-Flash-Omni-2603` | 模型名称，支持多模态 |
 
-#### 3.1.3 DeepSeekAdapter
+#### 3.1.3 PollinationsAdapter
 
 ```python
 # llm_adapter/deepseek.py
@@ -274,41 +273,29 @@ class DeepSeekAdapter(BaseLLMAdapter):
 **环境变量配置：**
 | 变量 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `DEEPSEEK_API_KEY` | string | (必填) | DeepSeek API Key |
-| `DEEPSEEK_MODEL` | string | `deepseek-chat` | 模型名称 |
+| `LONGCAT_API_KEY` | string | (必填) | 龙猫 API Key |
+| `LONGCAT_MODEL` | string | `LongCat-Flash-Omni-2603` | 多模态模型，支持图片理解 |
 
-#### 3.1.4 OpenAIAdapter
+#### 3.1.4 PollinationsAdapter（图片生成）
 
 ```python
-# llm_adapter/openai.py
-class OpenAIAdapter(BaseLLMAdapter):
-    def __init__(
-        self,
-        api_key: str,
-        model: str = "gpt-4o",
-        **kwargs
-    ):
-        self.api_key = api_key
-        self.model = model
-
-    async def chat(self, prompt, context, *, image=None, model=None, **kwargs) -> str:
-        """调用 OpenAI /chat/completions"""
-        ...
-
-    async def chat_stream(self, prompt, context, *, image=None, **kwargs) -> AsyncGenerator[str, None]:
-        """流式调用 /chat/completions"""
-        ...
-
-    @property
-    def provider_name(self) -> str:
-        return "openai"
+# llm_adapter/pollinations.py
+async def generate_image(prompt: str, width: int = 1024, height: int = 1024) -> str:
+    """
+    调用 Pollinations AI 生成图片，返回图片 URL。
+    Pollinations 完全免费，无需 API key。
+    """
+    encoded_prompt = quote(prompt)
+    return (
+        f"https://image.pollinations.ai/"
+        f"?prompt={encoded_prompt}"
+        f"&width={width}"
+        f"&height={height}"
+        f"&nologo=true"
+    )
 ```
 
-**环境变量配置：**
-| 变量 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `OPENAI_API_KEY` | string | (必填) | OpenAI API Key |
-| `OPENAI_MODEL` | string | `gpt-4o` | 模型名称 |
+**说明：** Pollinations 是免费开源的 AI 生图服务，无需注册 API key，直接通过 URL 方式调用。
 
 #### 3.1.5 适配器工厂
 
@@ -320,9 +307,7 @@ from llm_adapter.deepseek import DeepSeekAdapter
 from llm_adapter.openai import OpenAIAdapter
 
 _LLM_ADAPTERS: dict[str, type[BaseLLMAdapter]] = {
-    "ollama": OllamaAdapter,
-    "deepseek": DeepSeekAdapter,
-    "openai": OpenAIAdapter,
+    "longcat": LongCatAdapter,
 }
 
 def get_adapter(provider: str | None = None) -> BaseLLMAdapter:
@@ -763,18 +748,13 @@ LLONEBOT_WS_URL=ws://127.0.0.1:8080/ws  # LLOneBot WebSocket 地址
 # === LLM Provider ===
 LLM_PROVIDER=ollama               # 可选：ollama / deepseek / openai
 
-# Ollama (本地) ===
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=b5e600c99fb2a41d7ad4db45c1eb23b99aaf4159410009a39e5186afbb909d45
-OLLAMA_TIMEOUT=120
+# === LLM Provider ===
+LLM_PROVIDER=longcat
+LONGCAT_API_KEY=              # 龙猫 API Key（必填）
+LONGCAT_MODEL=LongCat-Flash-Omni-2603  # 多模态模型
 
-# DeepSeek (云端) ===
-DEEPSEEK_API_KEY=sk-xxxx
-DEEPSEEK_MODEL=deepseek-chat
-
-# OpenAI (备选) ===
-OPENAI_API_KEY=sk-xxxx
-OPENAI_MODEL=gpt-4o
+# === 图片生成（免费，无需 key）===
+# 直接使用 Pollinations URL 方式
 
 # === 广播 ===
 BROADCAST_SCHEDULE=8:00,12:00,18:00           # 广播时间
@@ -785,9 +765,8 @@ HISTORY_BACKEND=json           # json / redis
 HISTORY_FILE=data/chat_history.json
 HISTORY_MAX_TURNS=10           # 每用户保留的最大对话轮数
 
-# === 多模态 ===
-VISION_ENABLED=false           # true 时启用图片理解
-VISION_PROVIDER=ollama         # ollama / deepseek
+# === 联网搜索 ===
+ENABLE_WEB_SEARCH=true         # true 开启
 
 # === 管理员 ===
 ADMIN_USER_IDS=123456789       # 管理员 QQ 号，逗号分隔
@@ -1036,9 +1015,8 @@ qq-bot/
 ├── llm_adapter/            # === 核心扩展层 ===
 │   ├── __init__.py         # 导出 get_adapter()
 │   ├── base.py             # BaseLLMAdapter 抽象类
-│   ├── ollama.py           # Ollama 适配器
-│   ├── deepseek.py         # DeepSeek 适配器
-│   └── openai.py           # OpenAI 适配器
+│   ├── longcat.py          # 龙猫适配器（文字+图片理解）
+│   └── image_gen.py        # Pollinations 图片生成
 │
 ├── plugins/                # === 插件体系 ===
 │   ├── chat/               # AI 问答
@@ -1099,11 +1077,10 @@ qq-bot/
 
 ### Phase 4: 云端部署（1天）
 10. Docker compose 打包
-11. 部署到云，切 DeepSeek API
+11. 部署到云
 
 ### 后续扩展（按需）
-- 图片理解 → 换 vision 模型，加 `plugins/ext/image_understand/`
-- ASR → 加 `plugins/ext/asr/`
+- 图片编辑 → 引用图片 + 修改描述，通过 LongCat 图片理解 + Pollinations 生图
 - 知识库 RAG → 加 `llm_adapter/rag.py`
 - 长期记忆 → 加 `plugins/memory/summarizer.py`
 
@@ -1111,8 +1088,10 @@ qq-bot/
 
 ## 14. 验收标准
 
-- [ ] @bot 回答问题
-- [ ] 定时推送到群
-- [ ] 切换 LLM Provider（Ollama ↔ DeepSeek）只需改 .env
+- [x] @bot 回答问题
+- [x] 定时推送到群
+- [ ] 切换 LLM Provider（只需改 LLM_PROVIDER 环境变量）
 - [ ] 新增内容源不需要改核心代码
 - [ ] 新增插件不需要改核心代码
+- [ ] 图片理解（发送图片+文字 → AI 识别）
+- [ ] 图片生成（"画 xxx" → Pollinations 生成图片）

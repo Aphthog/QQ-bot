@@ -1,6 +1,6 @@
 # QQ Bot — NoneBot2 QQ 机器人
 
-基于 NoneBot2 的 QQ 机器人，支持群聊 @ 触发和私聊无前缀对话，接入本地 Ollama（qwen2.5:7b）和云端 DeepSeek 作为 LLM。
+基于 NoneBot2 的 QQ 机器人，支持群聊 @ 触发和私聊无前缀对话，接入龙猫（LongCat-Flash-Omni-2603 多模态模型）和 Pollinations（AI 生图）。
 
 ## 技术栈
 
@@ -8,7 +8,8 @@
 |------|------|
 | 消息协议 | QQ (LLOneBot / OneBot V11) |
 | 核心框架 | NoneBot2 2.4.2 |
-| LLM | Ollama（本地 qwen2.5:7b）/ DeepSeek（云端） |
+| LLM | LongCat-Flash-Omni-2603（文字+图片理解） |
+| 图片生成 | Pollinations AI（免费，无需 key） |
 | 联网搜索 | ddgs（DuckDuckGo 搜索） |
 | 定时任务 | nonebot-plugin-apscheduler |
 | 会话存储 | JSON 文件（按群/私聊分文件存储） |
@@ -25,7 +26,7 @@
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  LLOneBot（与 QQ 服务器长连接）                               │
-│  - 接收消息事件（群聊/私聊/入群等）                           │
+│  - 接收消息事件（群聊/私聊/图片等）                           │
 │  - 发送消息到群/私聊                                         │
 └─────────────────────────────────────────────────────────────┘
                               │ HTTP POST（反向 WS 模式）
@@ -40,7 +41,8 @@
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐    │
 │  │  LLM ADAPTER（统一接口）                              │    │
-│  │  Ollama（本地）/ DeepSeek（云端）                    │    │
+│  │  LongCat（文字+图片理解）                            │    │
+│  │  Pollinations（AI 图片生成）                         │    │
 │  └──────────────────────────────────────────────────────┘    │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐    │
@@ -58,27 +60,27 @@ qq-bot/
 ├── llm_adapter/               # LLM 适配层
 │   ├── __init__.py            # get_adapter() 工厂
 │   ├── base.py                # BaseLLMAdapter 抽象类
-│   ├── ollama.py              # Ollama 适配器
-│   ├── deepseek.py           # DeepSeek 适配器
-│   └── search.py             # 联网搜索（ddgs）
-├── plugins/                   # NoneBot2 插件
+│   ├── longcat.py             # 龙猫适配器（文字+图片理解）
+│   ├── image_gen.py           # Pollinations 图片生成
+│   └── search.py              # 联网搜索（ddgs）
+├── plugins/                    # NoneBot2 插件
 │   ├── chat/                  # AI 问答插件（核心）
 │   │   └── __init__.py
-│   ├── broadcast/             # 广播管理插件
+│   ├── broadcast/              # 广播管理插件
 │   │   └── __init__.py
 │   └── scheduler/             # 定时任务插件
 │       ├── __init__.py
-│       └── sources/            # 内容源
+│       └── sources/           # 内容源
 │           ├── __init__.py
-│           ├── base.py         # BaseSource 抽象类
-│           ├── news.py         # 新闻源（RSS）
-│           ├── weather.py      # 天气源（Open-Meteo）
-│           └── custom.py       # 自定义源
+│           ├── base.py        # BaseSource 抽象类
+│           ├── news.py        # 新闻源（RSS）
+│           ├── weather.py     # 天气源（Open-Meteo）
+│           └── custom.py      # 自定义源
 ├── data/                      # 数据目录
-│   └── chats/                  # 聊天历史（按群/私聊分文件）
+│   └── chats/                 # 聊天历史（按群/私聊分文件）
 │       ├── group_{群号}.json
 │       └── private_{QQ号}.json
-└── tests/                      # 测试
+└── tests/                     # 测试
 ```
 
 ## 已实现功能
@@ -88,15 +90,19 @@ qq-bot/
 **群聊：**
 - 用户 @bot 触发对话
 - 所有群消息被动记录到 `data/chats/group_{群号}.json`（不区分是否 @）
-- 群共享最近 300 条上下文；个人最近 15 条独立追踪
+- 最近 10 条群聊风向作为上下文背景；个人最近 10 条（5分钟内）作为往来记录
 
 **私聊：**
 - 无需前缀，直接对话
 - 存储在 `data/chats/private_{QQ号}.json`
 
+**多模态：**
+- 文字对话：LongCat-Flash-Omni-2603
+- 图片理解：发送图片 + 文字描述，自动识别图片内容
+- 图片生成：发送"画 xxx"指令，调用 Pollinations AI 生成图片
+
 **LLM 调用：**
-- Ollama（本地 qwen2.5:7b，默认）
-- DeepSeek（云端，切换 `LLM_PROVIDER=deepseek`）
+- LongCat（龙猫云端 API）
 - 每个 LLM 调用注入 System Prompt，约束不暴露模型/框架信息
 
 **身份保护（三层防御）：**
@@ -110,7 +116,7 @@ qq-bot/
 
 **联网搜索：**
 - 触发词（"今天"、"天气"、"新闻"等）→ DuckDuckGo 搜索 → 结果拼入 prompt
-- 默认关闭（`ENABLE_WEB_SEARCH=false`）
+- 默认开启（`ENABLE_WEB_SEARCH=true`）
 
 ### 2. 广播（broadcast 插件）
 
@@ -142,20 +148,20 @@ qq-bot/
 # === NoneBot2 ===
 DRIVER=~fastapi
 
-# === LLM ===
-LLM_PROVIDER=ollama              # ollama 或 deepseek
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:7b
-OLLAMA_TIMEOUT=120
-DEEPSEEK_API_KEY=sk-xxxx
-DEEPSEEK_MODEL=deepseek-chat
+# === LLM Provider ===
+LLM_PROVIDER=longcat
+LONGCAT_API_KEY=          # 龙猫 API Key（必填，从环境变量读取）
+LONGCAT_MODEL=LongCat-Flash-Omni-2603  # 多模态模型，支持图片理解
+
+# === 图片生成（免费）===
+# 无需配置 key，Pollinations 直接使用 URL 方式
 
 # === 聊天历史 ===
 HISTORY_DIR=data/chats           # 历史存储目录
 GROUP_HISTORY_MAX_TURNS=300     # 每群最大消息条数
 
 # === 联网搜索 ===
-ENABLE_WEB_SEARCH=false          # true 开启
+ENABLE_WEB_SEARCH=true          # true 开启
 
 # === 超级用户 ===
 SUPERUSERS=["1227696033"]       # 主人 QQ，可绕过注入检测
@@ -164,6 +170,8 @@ SUPERUSERS=["1227696033"]       # 主人 QQ，可绕过注入检测
 BROADCAST_SCHEDULE=8:00,12:00,18:00
 BROADCAST_CONTENT_TYPES=news,weather,custom
 ```
+
+> **API Key 管理**：龙猫 API Key 建议通过系统环境变量设置，不写在 `.env` 文件里，以避免意外提交到代码仓库。
 
 ## LLM 适配器接口
 
@@ -179,6 +187,8 @@ class BaseLLMAdapter(ABC):
         system_prompt: str | None = None,
         image: bytes | None = None,
         model: str | None = None,
+        max_tokens: int | None = None,
+        **kwargs
     ) -> str: ...
 
     async def chat_stream(
@@ -191,16 +201,18 @@ class BaseLLMAdapter(ABC):
     ) -> AsyncGenerator[str, None]: ...
 ```
 
-注册到 `llm_adapter/__init__.py` 的 `_ADAPTERS` 字典即可通过 `LLM_PROVIDER` 环境变量切换。
+注册到 `llm_adapter/__init__.py` 的 `adapters` 字典即可通过 `LLM_PROVIDER` 环境变量切换。
 
 ## 开发
 
 ### 启动
 
 ```bash
-# 启动 bot
-python bot.py
+# 使用 venv 的 Python 启动（重要！）
+.venv/Scripts/python.exe bot.py
 ```
+
+> 注意：必须使用项目 venv 内的 Python，而非系统 Python。否则可能因包版本差异导致 ImportError。
 
 ### 测试
 
@@ -210,6 +222,5 @@ pytest tests/
 
 ## 已知问题
 
-1. **身份保护仍有漏洞**：qwen2.5:7b 对"主人/身份"类问题有内置对齐拒绝机制，关键词拦截覆盖约 90% 场景
-2. **联网搜索依赖 DuckDuckGo**：有频率限制，大规模使用建议切换至 SerpAPI
-3. **消息历史无加密**：存储为明文 JSON，敏感信息勿写入聊天内容
+1. **联网搜索依赖 DuckDuckGo**：有频率限制，大规模使用建议切换至 SerpAPI
+2. **消息历史无加密**：存储为明文 JSON，敏感信息勿写入聊天内容

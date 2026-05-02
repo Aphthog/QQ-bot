@@ -64,6 +64,7 @@ class LongCatAdapter(BaseLLMAdapter):
             "model": model or self.model,
             "messages": messages,
             "stream": False,
+            "max_tokens": kwargs.get("max_tokens", 300),
             "topP": 0.9,
             "topK": 1,
             "textRepetitionPenalty": 1,

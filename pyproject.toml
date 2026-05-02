@@ -1,0 +1,19 @@
+[project]
+name = "qq-bot"
+version = "0.1.0"
+description = "NoneBot2 QQ Bot"
+requires-python = ">=3.10"
+dependencies = [
+    "nonebot2>=2.0.0",
+    "nonebot-adapter-onebot",
+    "nonebot-plugin-apscheduler",
+    "websockets",
+    "httpx",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+docs = ["nonebot-plugin-docs"]
+
+[tool.nonebot]
+plugins = ["plugins", "nonebot_plugin_docs"]
