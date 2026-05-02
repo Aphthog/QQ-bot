@@ -164,7 +164,7 @@ GROUP_HISTORY_MAX_TURNS=300     # 每群最大消息条数
 ENABLE_WEB_SEARCH=true          # true 开启
 
 # === 超级用户 ===
-SUPERUSERS=["1227696033"]       # 主人 QQ，可绕过注入检测
+SUPERUSERS=["3"]       # 主人 QQ，可绕过注入检测
 
 # === 广播 ===
 BROADCAST_SCHEDULE=8:00,12:00,18:00
