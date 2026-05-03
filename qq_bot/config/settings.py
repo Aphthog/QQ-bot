@@ -80,6 +80,11 @@ class Settings:
         except (json.JSONDecodeError, TypeError):
             return [raw] if raw else []
 
+    # ── 调试 ──
+    @property
+    def DEBUG_MODE(self) -> bool:
+        return os.getenv("DEBUG_MODE", "false").lower() == "true"
+
     # ── RAG ──
     KNOWLEDGE_INDEX_PATH: str = os.getenv("KNOWLEDGE_INDEX_PATH", "data/knowledge_index")
 

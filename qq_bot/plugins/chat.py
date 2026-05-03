@@ -18,6 +18,7 @@ from qq_bot.security.prompt import build_system_prompt
 from qq_bot.security.rules import OUTPUT_SENSITIVE_PATTERNS
 from qq_bot.services.chat_history import history_store
 from qq_bot.skills import SKILLS, execute_skill, parse_skill_params, route_command
+from qq_bot.debug_logger import incoming, context, llm_req, llm_resp, outgoing, skill as log_skill, sanitized
 
 BOT_NAME = settings.BOT_NAME
 
@@ -50,6 +51,7 @@ async def handle_group_watcher(event: Event):
     text = event.get_message().extract_plain_text()
     if not text:
         return
+    incoming("group", event.get_user_id(), text)
     history_store.save(f"group_{event.group_id}", "user", text, event.get_user_id())
 
 
@@ -65,6 +67,8 @@ private_chat = on_message(_is_private, block=True)
 @private_chat.handle()
 async def handle_private(event: Event):
     text, image_bytes = await _extract_image_from_message(event)
+    has_img = image_bytes is not None
+    incoming("private", event.get_user_id(), text, has_img)
     if not text and not image_bytes:
         return
 
@@ -72,16 +76,21 @@ async def handle_private(event: Event):
 
     skill_name = route_command(text)
     if skill_name:
-        result = await execute_skill(skill_name, parse_skill_params(skill_name, text), {"user_id": user_id})
+        params = parse_skill_params(skill_name, text)
+        log_skill(skill_name, params, f"ctx=user_id:{user_id}")
+        result = await execute_skill(skill_name, params, {"user_id": user_id})
+        outgoing(result)
         await private_chat.finish(MessageSegment.text(result))
 
     chat_key = f"private_{user_id}"
     history_store.save(chat_key, "user", text, user_id)
 
     history = history_store.load(f"private_{user_id}")[-5:]
-    context = history_store.format_as_context(history, "【最近对话】")
-    response = _sanitize_output(await _do_chat(text, context, image=image_bytes))
+    context_obj = history_store.format_as_context(history, "【最近对话】")
+    context(context_obj)
+    response = _sanitize_output(await _do_chat(text, context_obj, image=image_bytes))
     history_store.save(chat_key, "assistant", response, "bot")
+    outgoing(response)
     await private_chat.finish(MessageSegment.text(response))
 
 
@@ -97,13 +106,18 @@ group_chat = on_message(_rule_group & to_me(), block=True)
 @group_chat.handle()
 async def handle_group(event: Event, bot: Bot):
     text, image_bytes = await _extract_image_from_message(event)
+    has_img = image_bytes is not None
+    incoming("group@", event.get_user_id(), text, has_img)
     group_id = str(event.group_id)
 
     # Skill 命令
     skill_name = route_command(text)
     if skill_name:
+        params = parse_skill_params(skill_name, text)
         ctx = {"group_id": group_id, "bot_self_id": str(bot.self_id)}
-        result = await execute_skill(skill_name, parse_skill_params(skill_name, text), ctx)
+        log_skill(skill_name, {**params, **ctx}, "")
+        result = await execute_skill(skill_name, params, ctx)
+        outgoing(result)
         await group_chat.finish(MessageSegment.text(result))
 
     if not text and not image_bytes:
@@ -126,6 +140,7 @@ async def handle_group(event: Event, bot: Bot):
             p = m.group(2).strip()
             prompt = f"{p}，高清，细节丰富" if effect == "生成" else f"基于以下内容{effect}：{p}，效果逼真"
             img_url = await generate_image(prompt)
+            outgoing("", img_url)
             await group_chat.finish(MessageSegment.image(img_url))
 
     # @ 提及
@@ -144,9 +159,11 @@ async def handle_group(event: Event, bot: Bot):
 
     chat_key = f"group_{group_id}"
     # group_watcher 已保存过该消息，这里不再重复 save
-    context = history_store.build_context(chat_key, user_id, target_qq=target_qq, recent_limit=100 if is_summarize else 5)
-    response = _sanitize_output(await _do_chat_with_context(text, context, image=image_bytes))
+    ctx_msgs = history_store.build_context(chat_key, user_id, target_qq=target_qq, recent_limit=100 if is_summarize else 5)
+    context(ctx_msgs)
+    response = _sanitize_output(await _do_chat_with_context(text, ctx_msgs, image=image_bytes))
     history_store.save(chat_key, "assistant", response, "bot")
+    outgoing(response)
 
     if mentioned_qqs:
         await group_chat.finish(MessageSegment.at(mentioned_qqs[0]) + MessageSegment.text(response))
@@ -158,29 +175,35 @@ async def handle_group(event: Event, bot: Bot):
 # ═══════════════════════════════════════════
 
 async def _do_chat(prompt: str, history: list[dict], *, image: bytes | None = None) -> str:
+    llm_req(SYSTEM_PROMPT, prompt)
     try:
         llm = _get_llm()
-        return await llm.chat(
+        resp = await llm.chat(
             prompt=prompt,
             context=history,
             system_prompt=SYSTEM_PROMPT,
             image=image,
             max_tokens=settings.MAX_RESPONSE_TOKENS,
         )
+        llm_resp(resp)
+        return resp
     except Exception:
         return "我好像卡住了，过会儿再试试"
 
 
-async def _do_chat_with_context(prompt: str, context: list[dict], *, image: bytes | None = None) -> str:
+async def _do_chat_with_context(prompt: str, ctx: list[dict], *, image: bytes | None = None) -> str:
+    llm_req(SYSTEM_PROMPT, prompt)
     try:
         llm = _get_llm()
-        return await llm.chat(
+        resp = await llm.chat(
             prompt=prompt,
-            context=context,
+            context=ctx,
             system_prompt=SYSTEM_PROMPT,
             image=image,
             max_tokens=settings.MAX_RESPONSE_TOKENS,
         )
+        llm_resp(resp)
+        return resp
     except Exception:
         return "我好像卡住了，过会儿再试试"
 
@@ -189,6 +212,7 @@ def _sanitize_output(text: str) -> str:
     """输出脱敏：检测到敏感模式则替换"""
     for pattern in OUTPUT_SENSITIVE_PATTERNS:
         if re.search(pattern, text):
+            sanitized(pattern)
             return "啊呀刚才走神了，再说点别的呗"
     return text
 
