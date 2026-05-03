@@ -16,4 +16,4 @@ dependencies = [
 docs = ["nonebot-plugin-docs"]
 
 [tool.nonebot]
-plugins = ["plugins", "nonebot_plugin_docs"]
+plugins = ["qq_bot.plugins", "nonebot_plugin_docs"]

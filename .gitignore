@@ -5,17 +5,8 @@ __pycache__
 *.log
 .idea/
 
-# 运行时数据（聊天历史、索引等勿提交）；保留示例文件可版本化
+# 运行时数据（聊天历史、索引等勿提交）
 data/*
-!data/broadcast_groups.json.example
-
-# 本地调试输出
-debug_log.txt
-weather_test.txt
-
-# RAG / 向量索引（本地构建，可能含爬取文本，勿提交）
-src/data/*.pkl
-src/data/*.index
 
 # 个人求职/简历笔记（公开仓库易泄露隐私，默认不纳入版本库）
 INTERVIEW.md

@@ -1,9 +1,0 @@
-[nonebot]
-name = "qq-bot"
-version = "0.1.0"
-
-[adapter]
-name = "nonebot.adapters.onebot"
-
-[plugin]
-plugins = ["plugins"]
