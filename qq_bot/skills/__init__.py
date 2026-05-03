@@ -26,7 +26,7 @@ _handlers: dict[str, BaseSkill] = {
 
 _param_patterns = {
     "memory": r"/memory\s+(.+)",
-    "weather": r"/weather\s+(.+)",
+    "weather": r"/weather\s*(.+)",
     "top": r"/top",
     "random": r"/random",
 }
@@ -34,10 +34,16 @@ _param_patterns = {
 
 def route_command(text: str) -> str | None:
     text = text.strip()
+    # 标准化：去除前导 @机器人 和 / 后的空格
+    text = re.sub(r'^@\S+\s*', '', text)
+    text = re.sub(r'^/\s+', '/', text)
     for s in SKILLS:
-        if text.startswith(f"/{s['name']}") and (
-            len(text) == len(s['name']) + 1 or text[len(s['name']) + 1] in (" ", "")
-        ):
+        prefix = f"/{s['name']}"
+        if not text.startswith(prefix):
+            continue
+        suffix = text[len(prefix):]
+        # 如果后缀为空（纯 /command）或以非 ASCII 字母开头（中文等）/空格/标点，算匹配
+        if not suffix or not (suffix[0].isascii() and suffix[0].isalnum()):
             return s["name"]
     return None
 

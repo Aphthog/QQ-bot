@@ -19,3 +19,23 @@ services:
       - QQ_ACCOUNT=${QQ_ACCOUNT}
       - QQ_PASSWORD=${QQ_PASSWORD}
       - QQ_PROTOCOL=android
+
+  comfyui:
+    image: ai-dock/comfyui:latest
+    ports:
+      - "8188:8188"
+    volumes:
+      - ./models/comfyui/unet:/opt/ComfyUI/models/unet
+      - ./models/comfyui/clip:/opt/ComfyUI/models/clip
+      - ./models/comfyui/vae:/opt/ComfyUI/models/vae
+      - ./data/comfyui_output:/opt/ComfyUI/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  comfyui_models:

@@ -71,8 +71,15 @@ class LongCatAdapter(BaseLLMAdapter):
             "Content-Type": "application/json",
         }
 
+        import logging
+        log = logging.getLogger("qq_bot.debug")
+        if log.isEnabledFor(logging.DEBUG):
+            import json as _json
+            log.debug(f"LongCat payload:\n{_json.dumps(payload, ensure_ascii=False, indent=2)[:2000]}")
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
+            if resp.status_code != 200:
+                log.error(f"LongCat API {resp.status_code}: {resp.text[:500]}")
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
 

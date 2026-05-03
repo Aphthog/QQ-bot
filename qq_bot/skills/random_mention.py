@@ -39,4 +39,5 @@ class RandomMentionSkill(BaseSkill):
             return "最近没有活跃用户，无法艾特"
 
         chosen = random.choice(active_users)
-        return f"<at qq='{chosen}'/>"
+        name = await self._get_group_card(params, chosen)
+        return f"@{name}"

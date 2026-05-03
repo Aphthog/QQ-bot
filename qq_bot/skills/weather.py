@@ -55,14 +55,14 @@ class WeatherSkill(BaseSkill):
                     full_loc += f"，{lcountry}"
 
                 weather_info = (
-                    f"【{full_loc}】实时天气\n"
-                    f"温度：{now.get('temp', '?')}°C（体感{now.get('feelsLike', '?')}°C）\n"
-                    f"状况：{now.get('text', '?')}\n"
-                    f"湿度：{now.get('humidity', '?')}%\n"
-                    f"风速：{now.get('windSpeed', '?')}km/h（{now.get('windDir', '?')}）\n"
-                    f"能见度：{now.get('vis', '?')}km\n"
-                    f"紫外线：{now.get('uvIndex', '?')}\n"
-                    f"气压：{now.get('pressure', '?')}hPa"
+                    f"📍【{full_loc}】实时天气\n"
+                    f"🌡️ 温度：{now.get('temp', '?')}°C（体感{now.get('feelsLike', '?')}°C）\n"
+                    f"☁️ 状况：{now.get('text', '?')}\n"
+                    f"💧 湿度：{now.get('humidity', '?')}%\n"
+                    f"🌬️ 风速：{now.get('windSpeed', '?')}km/h（{now.get('windDir', '?')}）\n"
+                    f"👁️ 能见度：{now.get('vis', '?')}km\n"
+                    f"☀️ 紫外线：{now.get('uvIndex', '?')}\n"
+                    f"📊 气压：{now.get('pressure', '?')}hPa"
                 )
 
                 llm = get_adapter(settings.LLM_PROVIDER)

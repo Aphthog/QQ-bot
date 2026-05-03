@@ -11,16 +11,11 @@ os.environ.setdefault("HF_HUB_DISABLE_SAFETENSORS", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
-try:
-    from sentence_transformers import SentenceTransformer
-
-    _HAS_SENTENCE_TRANSFORMERS = True
-except ImportError:
-    _HAS_SENTENCE_TRANSFORMERS = False
-
 
 class Embedder:
     """向量化器（bge-large-zh-v1.5，1024维）"""
+
+    _sentence_transformers_available = False
 
     def __init__(
         self,
@@ -31,12 +26,14 @@ class Embedder:
         self.model_name = model_name
         self.device = device
         self.batch_size = batch_size
-        self._model: Optional["SentenceTransformer"] = None
+        self._model: Optional = None
 
     @property
     def model(self):
         if self._model is None:
-            if not _HAS_SENTENCE_TRANSFORMERS:
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError:
                 raise RuntimeError("请安装: pip install sentence-transformers")
             self._model = SentenceTransformer(self.model_name, device=self.device)
         return self._model

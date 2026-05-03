@@ -69,44 +69,34 @@ class ChatHistoryStore:
         chat_key: str,
         user_id: str,
         target_qq: str | None = None,
-        recent_limit: int = 5,
+        recent_limit: int = 15,
     ) -> list[dict]:
-        """构建带标签的上下文。用实际 user/assistant 角色而非全塞 system 消息，让 LLM 真正理解对话流。"""
+        """构建上下文。所有历史合并为一条 system 消息（LongCat 兼容格式）。"""
         history = self.load(chat_key)
-        ctx: list[dict] = []
 
         recent = history[-recent_limit:]
-        if recent:
-            ctx.append({"role": "system", "content": "【最近群聊风向】（以下是群内近期消息）"})
-            for m in recent:
-                role = m["role"]
-                content = m["content"]
-                if role == "user" and m.get("qq"):
-                    content = f"[{m['qq']}] {content}"
-                ctx.append({"role": role, "content": content})
+        # 排除刚刚由 group_watcher 存进来的当前消息
+        if recent and recent[-1].get("qq") == user_id:
+            recent = recent[:-1]
 
-        five_min_ago = int(time.time()) - 300
-        personal = [m for m in history if m.get("qq") == user_id and m.get("time", 0) >= five_min_ago][-10:]
-        if personal:
-            ctx.append({"role": "system", "content": "【你与该用户的往来记录】（以下是该用户近期对你说的话）"})
-            for m in personal:
-                content = m["content"]
-                if m.get("qq"):
-                    content = f"[{m['qq']}] {content}"
-                ctx.append({"role": "user", "content": content})
+        if not recent:
+            return []
+
+        lines = ["【最近群聊消息】"]
+        for m in recent:
+            label = f"User_{m['qq']}" if m["role"] == "user" else "Bot"
+            lines.append(f"{label}: {m['content']}")
 
         if target_qq:
-            msgs = [m for m in history if m.get("qq") == target_qq][-10:]
-            if msgs:
-                ctx.append({"role": "system", "content": f"【{target_qq}的发言】（以下是该用户的近期消息）"})
-                for m in msgs:
-                    role = m["role"]
-                    content = m["content"]
-                    if role == "user" and m.get("qq"):
-                        content = f"[{m['qq']}] {content}"
-                    ctx.append({"role": role, "content": content})
+            extra = [m for m in history if m.get("qq") == target_qq][-10:]
+            if extra:
+                lines.append("")
+                lines.append(f"以下是 {target_qq} 的更多发言：")
+                for m in extra:
+                    label = f"User_{m['qq']}" if m["role"] == "user" else "Bot"
+                    lines.append(f"{label}: {m['content']}")
 
-        return ctx
+        return [{"role": "system", "content": [{"type": "text", "text": "\n".join(lines)}]}]
 
 
 # 全局单例

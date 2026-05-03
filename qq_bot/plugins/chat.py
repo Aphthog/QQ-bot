@@ -114,7 +114,7 @@ async def handle_group(event: Event, bot: Bot):
     skill_name = route_command(text)
     if skill_name:
         params = parse_skill_params(skill_name, text)
-        ctx = {"group_id": group_id, "bot_self_id": str(bot.self_id)}
+        ctx = {"group_id": group_id, "bot_self_id": str(bot.self_id), "bot": bot}
         log_skill(skill_name, {**params, **ctx}, "")
         result = await execute_skill(skill_name, params, ctx)
         outgoing(result)
@@ -138,10 +138,15 @@ async def handle_group(event: Event, bot: Bot):
         m = re.match(pattern, text)
         if m:
             p = m.group(2).strip()
-            prompt = f"{p}，高清，细节丰富" if effect == "生成" else f"基于以下内容{effect}：{p}，效果逼真"
-            img_url = await generate_image(prompt)
-            outgoing("", img_url)
-            await group_chat.finish(MessageSegment.image(img_url))
+            if effect == "生成":
+                img_data = await generate_image(p)
+            else:
+                img_data = await generate_image(f"基于以下内容{effect}：{p}，效果逼真")
+            outgoing("", img_data)
+            if img_data.startswith("base64://"):
+                await group_chat.finish(MessageSegment.image(img_data))
+            else:
+                await group_chat.finish(MessageSegment.text("啊呀，画图的小脑袋宕机了，过会儿再试试～"))
 
     # @ 提及
     target_qq = None
@@ -159,7 +164,7 @@ async def handle_group(event: Event, bot: Bot):
 
     chat_key = f"group_{group_id}"
     # group_watcher 已保存过该消息，这里不再重复 save
-    ctx_msgs = history_store.build_context(chat_key, user_id, target_qq=target_qq, recent_limit=100 if is_summarize else 5)
+    ctx_msgs = history_store.build_context(chat_key, user_id, target_qq=target_qq, recent_limit=100 if is_summarize else 15)
     context(ctx_msgs)
     response = _sanitize_output(await _do_chat_with_context(text, ctx_msgs, image=image_bytes))
     history_store.save(chat_key, "assistant", response, "bot")
@@ -188,6 +193,8 @@ async def _do_chat(prompt: str, history: list[dict], *, image: bytes | None = No
         llm_resp(resp)
         return resp
     except Exception:
+        import traceback
+        traceback.print_exc()
         return "我好像卡住了，过会儿再试试"
 
 
@@ -205,6 +212,8 @@ async def _do_chat_with_context(prompt: str, ctx: list[dict], *, image: bytes | 
         llm_resp(resp)
         return resp
     except Exception:
+        import traceback
+        traceback.print_exc()
         return "我好像卡住了，过会儿再试试"
 
 

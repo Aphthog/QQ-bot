@@ -28,22 +28,19 @@ class Settings:
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
     DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
-    POLLINATIONS_API_KEY: str = os.getenv("POLLINATIONS_API_KEY", "")
+    # ── 图片生成（ComfyUI）──
+    COMFYUI_BASE_URL: str = os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8188")
 
     # ── 天气（和风天气）──
     QWEATHER_API_KEY: str = os.getenv("QWEATHER_API_KEY", "")
     QWEATHER_API_HOST: str = os.getenv("QWEATHER_API_HOST", "devapi.qweather.com")
-
-    # ── 广播 ──
-    BROADCAST_SCHEDULE: str = os.getenv("BROADCAST_SCHEDULE", "8:00,12:00,18:00")
-    BROADCAST_CONTENT_TYPES: list[str] = os.getenv("BROADCAST_CONTENT_TYPES", "news,weather,custom").split(",")
 
     # ── 聊天历史 ──
     HISTORY_DIR: str = os.getenv("HISTORY_DIR", "data/chats")
 
     @cached_property
     def GROUP_HISTORY_MAX_TURNS(self) -> int:
-        return int(os.getenv("GROUP_HISTORY_MAX_TURNS", "300"))
+        return int(os.getenv("GROUP_HISTORY_MAX_TURNS", "1000"))
 
     @cached_property
     def USER_HISTORY_MAX_TURNS(self) -> int:

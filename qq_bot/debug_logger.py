@@ -77,7 +77,8 @@ def skill(name: str, params: dict, result: str):
     _setup()
     if not settings.DEBUG_MODE:
         return
-    logger.debug(f"  skill: /{name} {json.dumps(params, ensure_ascii=False)[:100]}")
+    safe = json.dumps(params, ensure_ascii=False, default=str)[:100]
+    logger.debug(f"  skill: /{name} {safe}")
     logger.debug(f"  skill → {result[:200]}")
 
 
