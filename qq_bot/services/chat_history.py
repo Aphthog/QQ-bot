@@ -1,8 +1,3 @@
-"""
-聊天历史存储：JSON 文件存储，支持按群/私聊分文件。
-供插件层和技能层共同使用，消除循环引用。
-"""
-
 import json
 import os
 import time
@@ -12,7 +7,6 @@ from qq_bot.security.rules import BLOCKED_KEYWORDS
 
 
 class ChatHistoryStore:
-    """聊天历史存储，每个 chat_key 独立文件"""
 
     def __init__(
         self,

@@ -15,3 +15,11 @@ INTERVIEW_RESUME.md
 RESUME_BULLETS.md
 RESUME_FAQ.md
 QQ_BOT_FAQ.md
+DESIGN.md
+SPEC.md
+
+# 部署文件（本地开发用，不推远端）
+Dockerfile
+docker-compose.yml
+.dockerignore
+deploy.sh

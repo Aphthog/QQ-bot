@@ -1,8 +1,3 @@
-"""
-NoneBot2 聊天插件（薄层）。
-职责：接收 QQ 事件 → 调 Service → 发送回复。不含业务逻辑。
-"""
-
 import re
 
 import httpx

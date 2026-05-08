@@ -1,8 +1,3 @@
-"""
-统一安全服务。
-提供三层防护，所有方法按需调用，不存在死代码。
-"""
-
 from __future__ import annotations
 
 import re

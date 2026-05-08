@@ -1,5 +1,3 @@
-"""System Prompt 定义（安全控制的一部分）。"""
-
 from qq_bot.config import settings
 
 

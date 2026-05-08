@@ -1,8 +1,3 @@
-"""
-分块器：基于语义边界的文本切分。
-改进：按句号/问号/感叹号切分，避免在句子中间打断。
-"""
-
 from dataclasses import dataclass
 import re
 
@@ -15,7 +10,6 @@ class Chunk:
 
 
 class SessionChunker:
-    """按语义边界分块，而非固定字数"""
 
     def __init__(self, max_chars: int = 500, overlap: int = 80):
         self.max_chars = max_chars

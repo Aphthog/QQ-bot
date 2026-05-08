@@ -1,9 +1,3 @@
-"""
-检索器：用户提问 → 向量化 → FAISS 搜索 → 返回相关 chunks。
-
-注意：FAISS L2 距离越小越相似。bge-large-zh 的 L2 距离典型范围 80-200。
-"""
-
 from typing import Optional
 
 from qq_bot.config import settings
@@ -12,7 +6,6 @@ from .indexer import FAISSIndexer
 
 
 class Retriever:
-    """RAG 检索器"""
 
     def __init__(
         self,

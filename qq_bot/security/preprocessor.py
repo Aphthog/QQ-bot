@@ -1,7 +1,3 @@
-"""
-前置过滤器：消息到达 matcher 前拦截敏感内容。
-"""
-
 import re
 from nonebot import logger
 from nonebot.adapters.onebot.v11 import MessageEvent

@@ -1,7 +1,3 @@
-"""
-向量化：使用 bge-large-zh 将文本转为向量。
-"""
-
 import os
 from typing import Optional
 
@@ -13,7 +9,6 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 
 class Embedder:
-    """向量化器（bge-large-zh-v1.5，1024维）"""
 
     _sentence_transformers_available = False
 

@@ -1,7 +1,3 @@
-"""
-索引器：使用 FAISS 构建向量索引。
-"""
-
 import os
 import pickle
 from typing import Optional
@@ -17,7 +13,6 @@ except ImportError:
 
 
 class FAISSIndexer:
-    """FAISS 向量索引构建器"""
 
     def __init__(
         self,
