@@ -14,6 +14,8 @@ from qq_bot.security.rules import OUTPUT_SENSITIVE_PATTERNS
 from qq_bot.services.chat_history import history_store
 from qq_bot.skills import SKILLS, execute_skill, parse_skill_params, route_command
 from qq_bot.debug_logger import incoming, context, llm_req, llm_resp, outgoing, skill as log_skill, sanitized
+from qq_bot.agent import run as agent_run
+from qq_bot.agent.tools import TOOL_SCHEMAS
 
 BOT_NAME = settings.BOT_NAME
 
@@ -83,7 +85,22 @@ async def handle_private(event: Event):
     history = history_store.load(f"private_{user_id}")[-5:]
     context_obj = history_store.format_as_context(history, "【最近对话】")
     context(context_obj)
-    response = _sanitize_output(await _do_chat(text, context_obj, image=image_bytes))
+
+    llm = _get_llm()
+    if llm.supports_tools():
+        resp = await agent_run(
+            prompt=text,
+            image=image_bytes,
+            context=context_obj,
+            system_prompt=SYSTEM_PROMPT,
+            tools=TOOL_SCHEMAS,
+            llm=llm,
+            events_context={"user_id": user_id},
+        )
+        response = resp.text or "啊呀，小脑袋卡住了，换个方式试试~"
+    else:
+        response = _sanitize_output(await _do_chat(text, context_obj, image=image_bytes))
+
     history_store.save(chat_key, "assistant", response, "bot")
     outgoing(response)
     await private_chat.finish(MessageSegment.text(response))
@@ -161,7 +178,25 @@ async def handle_group(event: Event, bot: Bot):
     # group_watcher 已保存过该消息，这里不再重复 save
     ctx_msgs = history_store.build_context(chat_key, user_id, target_qq=target_qq, recent_limit=100 if is_summarize else 15)
     context(ctx_msgs)
-    response = _sanitize_output(await _do_chat_with_context(text, ctx_msgs, image=image_bytes))
+    llm = _get_llm()
+    if llm.supports_tools():
+        resp = await agent_run(
+            prompt=text,
+            image=image_bytes,
+            context=ctx_msgs,
+            system_prompt=SYSTEM_PROMPT,
+            tools=TOOL_SCHEMAS,
+            llm=llm,
+            events_context={
+                "group_id": group_id,
+                "bot_self_id": str(bot.self_id),
+                "bot": bot,
+            },
+        )
+        response = resp.text or "啊呀，小脑袋卡住了，换个方式试试~"
+    else:
+        response = _sanitize_output(await _do_chat_with_context(text, ctx_msgs, image=image_bytes))
+
     history_store.save(chat_key, "assistant", response, "bot")
     outgoing(response)
 
