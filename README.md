@@ -23,7 +23,8 @@ qq-bot/
 │   ├── config/            # 集中配置
 │   ├── llm/               # LLM 适配层（LongCat / DeepSeek / Ollama / ComfyUI）
 │   ├── rag/               # 知识库（分块器 + 向量化 + FAISS 索引 + 检索）
-│   ├── security/          # 三层安全防御（关键词拦截 / 注入检测 / 输出脱敏）
+│   ├── agent/             # Agent 模块（ReAct runner / 工具注册 / 输入输出安全）
+│   ├── security/          # 三层安全防御（关键词拦截 / 注入检测 / 输出脱敏 / URL 校验）
 │   ├── services/          # 业务服务（聊天历史 / 网页搜索 / 爬虫）
 │   ├── skills/            # Skill 命令框架（天气 / 群统计 / 随机艾特 / 网页记忆）
 │   └── plugins/           # NoneBot2 插件（聊天 / 广播 / 定时）
@@ -58,6 +59,46 @@ qq-bot/
 
 ### 联网搜索
 触发词匹配（"今天"、"天气"、"新闻"等）→ DuckDuckGo 搜索 → 结果拼入 prompt。
+
+## Agent 架构
+
+bot 已升级为 **ReAct 式 Agent**——LLM 自主决定何时调用工具、调用哪个工具、如何组合多步操作。
+
+**工作流程：**
+1. 收到 @ 或私聊消息
+2. LLM 判断：直接回复 or 调用工具？
+3. 调用工具 → 结果喂回 LLM → 判断是否继续
+4. 最多 3 轮，输出最终回复
+
+**可用工具（8个）：**
+| 工具 | 功能 |
+|------|------|
+| search_web | 联网搜索 |
+| get_weather | 查询天气 |
+| search_knowledge | 知识库检索 |
+| crawl_webpage | 爬取网页 |
+| add_to_knowledge | 爬取+入库 |
+| generate_image | AI 生图 |
+| get_top_speakers | 群发言排行 |
+| random_mention | 随机 @ |
+
+**安全措施：**
+- URL 校验防 SSRF（阻止私有 IP / 内网地址）
+- Tool result 注入脱敏（过滤劫持模式 + 特殊 token）
+- Per-tool `asyncio.wait_for` 超时保护
+- 非工具 LLM (LongCat/Ollama) 自动降级为单次调用
+
+**如何新增工具：**
+1. 在 `qq_bot/agent/tools.py` 的 `TOOL_SCHEMAS` 列表中添加 OpenAI 兼容的 function schema
+2. 在 `TOOL_HANDLERS` 字典中注册同名 handler 函数
+3. handler 签名：`async def handler(params: dict, ctx: dict) -> str`
+
+**Agent 配置（环境变量）：**
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| AGENT_MAX_ITER | 3 | 最大推理轮次 |
+| AGENT_MAX_TOKENS | 1024 | 单次 LLM 调用最大 token |
+| AGENT_TOOL_TIMEOUT | 15 | 单个工具执行超时（秒） |
 
 ## 配置
 
