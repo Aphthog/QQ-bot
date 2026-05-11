@@ -72,7 +72,7 @@ async def run(
             resp = await llm.chat_with_tools(
                 prompt=prompt if iteration == 1 else None,
                 tools=[] if should_force_reply else tools,
-                context=messages[1:] if len(messages) > 1 else None,
+                context=messages[1:],  # skip system message
                 system_prompt=system_prompt,
                 image=image if iteration == 1 else None,
                 max_tokens=settings.AGENT_MAX_TOKENS,
