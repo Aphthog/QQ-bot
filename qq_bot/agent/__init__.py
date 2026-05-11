@@ -1,15 +1,8 @@
-"""QQ Bot Agent Package.
-
-Agent loop and supporting data classes for ReAct-style LLM interactions.
-"""
-
-from .response import ChatResponse, ToolCall
-
 try:
-    from .runner import run
+    from .runner import run  # noqa: F401
 except ImportError:
-    # runner is created in a later task; expose once available
-    def run() -> None:  # type: ignore[misc]
-        raise NotImplementedError("Agent runner not yet implemented (Task 6)")
+    # runner.py 将在 Task 6 创建
+    async def run(*args, **kwargs):
+        raise NotImplementedError("Agent runner not yet implemented")
 
-__all__ = ["run", "ChatResponse", "ToolCall"]
+__all__ = ["run"]
