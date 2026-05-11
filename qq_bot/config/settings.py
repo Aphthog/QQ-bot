@@ -77,6 +77,11 @@ class Settings:
         except (json.JSONDecodeError, TypeError):
             return [raw] if raw else []
 
+    # ── Agent ──
+    AGENT_MAX_ITER: int = int(os.getenv("AGENT_MAX_ITER", "3"))
+    AGENT_MAX_TOKENS: int = int(os.getenv("AGENT_MAX_TOKENS", "1024"))
+    AGENT_TOOL_TIMEOUT: float = float(os.getenv("AGENT_TOOL_TIMEOUT", "15"))
+
     # ── 调试 ──
     @property
     def DEBUG_MODE(self) -> bool:
