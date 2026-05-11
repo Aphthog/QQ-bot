@@ -7,6 +7,7 @@ repeat until the model produces a text reply or the iteration cap is hit.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 
@@ -62,6 +63,8 @@ async def run(
     if context:
         messages.extend(context)
 
+    # messages[0] is system prompt if one was set, otherwise first context msg
+    ctx_start = 1 if system_prompt else 0
     max_iter = settings.AGENT_MAX_ITER
     fallback = ChatResponse(text="啊呀，小脑袋卡住了，换个方式试试~")
 
@@ -72,7 +75,7 @@ async def run(
             resp = await llm.chat_with_tools(
                 prompt=prompt if iteration == 1 else None,
                 tools=[] if should_force_reply else tools,
-                context=messages[1:],  # skip system message
+                context=messages[ctx_start:] if len(messages) > ctx_start else None,
                 system_prompt=system_prompt,
                 image=image if iteration == 1 else None,
                 max_tokens=settings.AGENT_MAX_TOKENS,
@@ -90,9 +93,34 @@ async def run(
             return ChatResponse(text=_sanitize_output(resp.text))
 
         if resp.tool_calls:
-            tool_results = await execute_tool_calls(resp.tool_calls, events_context)
-            for tc in resp.tool_calls:
-                messages.append(tc.to_assistant_message())
+            try:
+                tool_results = await execute_tool_calls(resp.tool_calls, events_context)
+            except Exception:
+                logger.error(
+                    "Tool execution failed on iteration %d",
+                    iteration,
+                    exc_info=True,
+                )
+                return ChatResponse(text="我好像卡住了，过会儿再试试")
+
+            # Single assistant message with all tool_calls (API contract)
+            messages.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(
+                                tc.arguments, ensure_ascii=False
+                            ),
+                        },
+                    }
+                    for tc in resp.tool_calls
+                ],
+            })
             messages.extend(tool_results)
             continue
 
