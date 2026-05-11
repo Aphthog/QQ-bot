@@ -12,19 +12,24 @@ class ToolCall:
     @classmethod
     def from_openai(cls, raw: dict) -> ToolCall | None:
         """从 OpenAI 兼容的 tool_call 原始 dict 解析，失败返回 None"""
+        if raw is None:
+            return None
         try:
-            func = raw.get("function", {})
+            func = raw.get("function") or {}
             args_str = func.get("arguments", "{}")
             if isinstance(args_str, dict):
                 args = args_str
             else:
                 args = json.loads(args_str)
-            return cls(
+            tc = cls(
                 id=raw.get("id", ""),
                 name=func.get("name", ""),
                 arguments=args,
             )
-        except (json.JSONDecodeError, TypeError, KeyError):
+            if not tc.id or not tc.name:
+                return None
+            return tc
+        except (json.JSONDecodeError, TypeError, AttributeError):
             return None
 
     def to_assistant_message(self) -> dict:
