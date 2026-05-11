@@ -78,13 +78,17 @@ class DeepSeekAdapter(BaseLLMAdapter):
             "model": model or self.model,
             "messages": messages,
             "stream": False,
-            "max_tokens": kwargs.get("max_tokens", settings.AGENT_MAX_TOKENS),
-            "temperature": 1.0,
-            "top_p": 1.0,
         }
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice
+            payload["temperature"] = 1.0
+            payload["top_p"] = 1.0
+        max_tokens = kwargs.get("max_tokens")
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        elif tools:
+            payload["max_tokens"] = settings.AGENT_MAX_TOKENS
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
