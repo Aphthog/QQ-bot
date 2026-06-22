@@ -4,8 +4,9 @@ from nonebot.adapters.onebot.v11 import MessageEvent
 from nonebot.exception import IgnoredException
 from nonebot.message import run_preprocessor
 
-from qq_bot.config import settings
-from .rules import BLOCKED_KEYWORDS
+from qq_bot.config import config as settings
+
+BLOCKED_KEYWORDS: list[str] = []
 
 
 def _is_sensitive(text: str) -> bool:
