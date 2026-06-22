@@ -17,6 +17,7 @@ class TestConfig:
     def test_superusers_parsing(self, monkeypatch):
         monkeypatch.setenv("SUPERUSERS", '["111","222"]')
         cfg = Config()
+        cfg.__dict__.pop("SUPERUSERS", None)  # clear cached_property cache
         assert cfg.SUPERUSERS == ["111", "222"]
 
     def test_cache_hit(self):
