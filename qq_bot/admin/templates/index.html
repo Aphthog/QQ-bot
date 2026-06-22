@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>QQ Bot Admin</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 2rem auto; padding: 1rem; }
+        .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+        .key { color: #666; } .val { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>QQ Bot Admin Panel</h1>
+    <div class="card" id="config">
+        <h2>Config</h2>
+        <p><span class="key">LLM:</span> <span class="val" id="llm">-</span></p>
+        <p><span class="key">Search:</span> <span class="val" id="search">-</span></p>
+        <p><span class="key">Debug:</span> <span class="val" id="debug">-</span></p>
+    </div>
+    <script>
+        const token = localStorage.getItem('admin_token') || '';
+        if (!token) {
+            const t = prompt('Admin Token:');
+            if (t) localStorage.setItem('admin_token', t);
+        }
+        const headers = { 'Authorization': 'Bearer ' + (token || localStorage.getItem('admin_token')) };
+
+        fetch('/admin/api/config', { headers })
+            .then(r => r.json())
+            .then(c => {
+                document.getElementById('llm').textContent = c.llm_provider;
+                document.getElementById('search').textContent = c.search_backend;
+                document.getElementById('debug').textContent = c.debug_mode;
+            })
+            .catch(() => document.body.innerHTML = '<p style="color:red">Auth failed. Check ADMIN_TOKEN.</p>');
+    </script>
+</body>
+</html>
