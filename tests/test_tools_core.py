@@ -1,18 +1,5 @@
 import pytest
-from qq_bot.tools.core import web_search, web_fetch, run_code
-
-
-class TestWebSearch:
-    @pytest.mark.asyncio
-    async def test_returns_string(self):
-        result = await web_search(query="Python programming")
-        assert isinstance(result, str)
-        assert len(result) > 0
-
-    @pytest.mark.asyncio
-    async def test_empty_query(self):
-        result = await web_search(query="")
-        assert "[搜索失败" in result or "缺少" in result
+from qq_bot.tools.core import web_fetch, run_code
 
 
 class TestWebFetch:

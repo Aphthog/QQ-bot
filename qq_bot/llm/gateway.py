@@ -26,6 +26,6 @@ class LLMGateway:
 
 
 # Register built-in providers
-from qq_bot.llm.glm_4v import GLM4VProvider  # noqa: E402
+from qq_bot.llm.glm_4v import GLMProvider  # noqa: E402
 
-LLMGateway.register("glm", GLM4VProvider)
+LLMGateway.register("glm", GLMProvider)

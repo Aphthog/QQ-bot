@@ -26,16 +26,16 @@ class Config:
     GLM_MODEL: str = os.getenv("GLM_MODEL", "glm-4.6v")
     GLM_BASE_URL: str = os.getenv("GLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
 
-    # Search
-    SEARCH_BACKEND: str = os.getenv("SEARCH_BACKEND", "searxng")
-    SEARXNG_BASE_URL: str = os.getenv("SEARXNG_BASE_URL", "http://localhost:8888")
-    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
-
     # Agent
     AGENT_MAX_PLAN_STEPS: int = int(os.getenv("AGENT_MAX_PLAN_STEPS", "5"))
     AGENT_MAX_RETRY: int = int(os.getenv("AGENT_MAX_RETRY", "2"))
     AGENT_TOOL_TIMEOUT: float = float(os.getenv("AGENT_TOOL_TIMEOUT", "15"))
     MAX_RESPONSE_TOKENS: int = int(os.getenv("MAX_RESPONSE_TOKENS", "1024"))
+
+    @property
+    def TASK_THINKING(self) -> bool:
+        """Enable deep thinking for task execution (slower but better reasoning)."""
+        return os.getenv("TASK_THINKING", "false").lower() == "true"
 
     # Admin
     ADMIN_TOKEN: str = os.getenv("ADMIN_TOKEN", "change_me")
@@ -59,6 +59,9 @@ class Config:
 
     # Session carry-over window (seconds)
     SESSION_CARRY_WINDOW: int = int(os.getenv("SESSION_CARRY_WINDOW", "10"))
+
+    # Image server (serves generated images to Lagrange via HTTP)
+    IMAGE_SERVER_PORT: int = int(os.getenv("IMAGE_SERVER_PORT", "18900"))
 
 
 config = Config()

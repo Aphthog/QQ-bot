@@ -1,4 +1,4 @@
-"""Core agent tools: web_search, web_fetch, run_code."""
+"""Core agent tools: web_fetch, run_code."""
 from __future__ import annotations
 
 import asyncio
@@ -8,82 +8,10 @@ import re
 import sys
 import traceback
 
-import httpx
-
-from qq_bot.config import config
 from qq_bot.security.url_validator import URLValidationError, validate_url
 from qq_bot.tools.registry import tool
 
 logger = logging.getLogger("qq_bot.tools.core")
-
-
-# ── web_search ──────────────────────────────────────────────
-
-@tool(
-    name="web_search",
-    description="搜索互联网获取实时信息。适用：查新闻、天气、股价、百科、实时数据等。",
-    params={"query": (str, "搜索关键词，中文或英文")},
-    category="core",
-)
-async def web_search(query: str) -> str:
-    if not query or not query.strip():
-        return "[搜索失败: 缺少搜索关键词]"
-
-    backend = config.SEARCH_BACKEND
-    if backend == "searxng":
-        return await _search_searxng(query)
-    elif backend == "tavily":
-        return await _search_tavily(query)
-    return f"[搜索失败: 未知搜索后端 '{backend}']"
-
-
-async def _search_searxng(query: str, max_results: int = 5) -> str:
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                f"{config.SEARXNG_BASE_URL}/search",
-                params={"q": query, "format": "json", "categories": "general"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            results = data.get("results", [])[:max_results]
-            if not results:
-                return "[搜索无结果]"
-            lines = []
-            for r in results:
-                title = r.get("title", "")
-                snippet = r.get("content", "") or r.get("snippet", "")
-                url = r.get("url", "")
-                lines.append(f"[{title}]\n{snippet}\n来源: {url}")
-            return "\n\n".join(lines)
-    except Exception as e:
-        logger.error(f"SearXNG search failed: {e}")
-        return f"[搜索失败: {e}]"
-
-
-async def _search_tavily(query: str, max_results: int = 5) -> str:
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                "https://api.tavily.com/search",
-                json={
-                    "api_key": config.TAVILY_API_KEY,
-                    "query": query,
-                    "max_results": max_results,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            results = data.get("results", [])
-            if not results:
-                return "[搜索无结果]"
-            lines = []
-            for r in results:
-                lines.append(f"[{r.get('title', '')}]\n{r.get('content', '')}\n来源: {r.get('url', '')}")
-            return "\n\n".join(lines)
-    except Exception as e:
-        logger.error(f"Tavily search failed: {e}")
-        return f"[搜索失败: {e}]"
 
 
 # ── web_fetch ───────────────────────────────────────────────

@@ -55,18 +55,33 @@ def _check_trigger(event: Event) -> str | None:
     return None
 
 
-def _extract_text_and_images(event: Event) -> tuple[str, list[bytes]]:
+def _extract_text_and_images(event: Event) -> tuple[str, list[str]]:
+    """Extract text and image URLs from an event."""
     text_parts: list[str] = []
-    images: list[bytes] = []
+    image_urls: list[str] = []
     for seg in event.get_message():
         if seg.type == "text":
             text_parts.append(seg.data.get("text", ""))
         elif seg.type == "image":
             url = seg.data.get("url", "")
             if url:
-                # Images are downloaded async in the handler
-                pass
-    return "".join(text_parts).strip(), images
+                image_urls.append(url)
+    return "".join(text_parts).strip(), image_urls
+
+
+def _extract_text_and_images_from_msg(msg: dict) -> tuple[str, list[str]]:
+    """Extract text and image URLs from a quoted message dict (from bot.get_msg)."""
+    text_parts: list[str] = []
+    image_urls: list[str] = []
+    for seg in msg.get("message", []):
+        seg_type = seg.get("type", "")
+        if seg_type == "text":
+            text_parts.append(seg.get("data", {}).get("text", ""))
+        elif seg_type == "image":
+            url = seg.get("data", {}).get("url", "")
+            if url:
+                image_urls.append(url)
+    return "".join(text_parts).strip(), image_urls
 
 
 async def _download_image(url: str) -> bytes | None:
@@ -75,8 +90,10 @@ async def _download_image(url: str) -> bytes | None:
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.get(url)
-            return r.content if r.status_code == 200 else None
-    except Exception:
+            if r.status_code != 200:
+                return None
+            return r.content
+    except Exception as e:
         return None
 
 
@@ -115,21 +132,28 @@ async def handle_group_chat(event: Event, bot: Bot):
     group_id = str(getattr(event, "group_id", ""))
     chat_key = f"group_{group_id}"
 
-    text, _ = _extract_text_and_images(event)
-    if not text:
-        return
+    text, image_urls = _extract_text_and_images(event)
 
-    # Extract image URLs and download
-    image_urls = [
-        seg.data.get("url", "")
-        for seg in event.get_message()
-        if seg.type == "image" and seg.data.get("url")
-    ]
-    images = []
-    for url in image_urls:
-        img_bytes = await _download_image(url)
-        if img_bytes:
-            images.append(img_bytes)
+    # Handle reply/quote: extract from event.reply (OneBot V11 compat)
+    reply_msg = getattr(event, "reply", None)
+    if reply_msg is not None:
+        quote_text = ""
+        quote_urls: list[str] = []
+        for seg in getattr(reply_msg, "message", []):
+            seg_type = getattr(seg, "type", "")
+            if seg_type == "text":
+                quote_text += getattr(seg, "data", {}).get("text", "")
+            elif seg_type == "image":
+                url = getattr(seg, "data", {}).get("url", "")
+                if url:
+                    quote_urls.append(url)
+        if quote_text:
+            text = f"[引用消息] {quote_text}\n{text}" if text else f"[引用消息] {quote_text}"
+        image_urls = quote_urls + image_urls
+
+    if not text and not image_urls:
+        logger.info("No text and no images, skipping")
+        return
 
     # Rate check
     ok, reason = await guard.check_rate(user_id, group_id)
@@ -150,40 +174,76 @@ async def handle_group_chat(event: Event, bot: Bot):
 
     response = await agent.run(
         text,
-        images=images if images else None,
+        image_urls=image_urls if image_urls else None,
         memory_context=combined_context,
         user_id=user_id,
         group_id=group_id,
     )
 
+    resp_text = response.get("text", "")
+    resp_images = response.get("images", [])
+
+    if not resp_text and not resp_images:
+        return
+
     # Save & update carry-over
-    await memory.save(chat_key, "assistant", response, "bot")
+    await memory.save(chat_key, "assistant", resp_text, "bot")
     _last_reply[f"{chat_key}:{user_id}"] = time.time()
 
     # Update profiles & extract facts
     await memory.update_profile(user_id, "", ctx_msgs[-10:])
     await memory.extract_and_remember(
-        chat_key, ctx_msgs[-6:] + [{"role": "assistant", "content": response}]
+        chat_key, ctx_msgs[-6:] + [{"role": "assistant", "content": resp_text}]
     )
 
-    await group_chat.finish(MessageSegment.text(response))
+    # Build response message with optional images (sent separately)
+    if resp_images:
+        if resp_text:
+            await group_chat.send(MessageSegment.text(resp_text))
+        for file_uri in resp_images:
+            await group_chat.send(MessageSegment.image(file_uri))
+        await group_chat.finish()
+    else:
+        await group_chat.finish(MessageSegment.text(resp_text))
 
 
 # ── Private chat ──
 
-private_chat = on_message(lambda e: getattr(e, "message_type", "") == "private", block=True)
+def _is_private(event: Event) -> bool:
+    return getattr(event, "message_type", "") == "private"
+
+private_chat = on_message(_is_private, block=True)
 
 
 @private_chat.handle()
-async def handle_private_chat(event: Event):
+async def handle_private_chat(event: Event, bot: Bot):
     if agent is None or memory is None or guard is None:
         return
 
     user_id = event.get_user_id()
     chat_key = f"private_{user_id}"
 
-    text, _ = _extract_text_and_images(event)
-    if not text:
+    text, image_urls = _extract_text_and_images(event)
+
+    # Handle reply/quote: extract from event.reply (OneBot V11 compat)
+    reply_msg = getattr(event, "reply", None)
+    if reply_msg is not None:
+        quote_text = ""
+        quote_urls: list[str] = []
+        for seg in getattr(reply_msg, "message", []):
+            seg_type = getattr(seg, "type", "")
+            if seg_type == "text":
+                quote_text += getattr(seg, "data", {}).get("text", "")
+            elif seg_type == "image":
+                url = getattr(seg, "data", {}).get("url", "")
+                if url:
+                    quote_urls.append(url)
+        if quote_text:
+            text = f"[引用消息] {quote_text}\n{text}" if text else f"[引用消息] {quote_text}"
+        image_urls = quote_urls + image_urls
+
+    if not text and not image_urls:
+        logger.info("No text and no images, skipping")
         return
 
     ok, reason = await guard.check_rate(user_id)
@@ -196,13 +256,28 @@ async def handle_private_chat(event: Event):
 
     response = await agent.run(
         text,
+        image_urls=image_urls if image_urls else None,
         memory_context=f"{ctx_text}\n{mem_text}" if mem_text else ctx_text,
         user_id=user_id,
     )
 
-    await memory.save(chat_key, "assistant", response, "bot")
+    resp_text = response.get("text", "")
+    resp_images = response.get("images", [])
+
+    if not resp_text and not resp_images:
+        return
+
+    await memory.save(chat_key, "assistant", resp_text, "bot")
     _last_reply[f"{chat_key}:{user_id}"] = time.time()
-    await private_chat.finish(MessageSegment.text(response))
+
+    if resp_images:
+        if resp_text:
+            await private_chat.send(MessageSegment.text(resp_text))
+        for file_uri in resp_images:
+            await private_chat.send(MessageSegment.image(file_uri))
+        await private_chat.finish()
+    else:
+        await private_chat.finish(MessageSegment.text(resp_text))
 
 
 def _format_context(msgs: list[dict]) -> str:

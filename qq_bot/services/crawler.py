@@ -1,15 +1,11 @@
 """
-网页爬取工具（使用 Playwright）
+网页爬取工具（使用 httpx + BeautifulSoup）
 """
 
-import os
 import re
 from typing import Optional
 
-os.environ.setdefault("HF_HUB_DISABLE_SAFETENSORS", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-
+import httpx
 from bs4 import BeautifulSoup
 
 
@@ -59,25 +55,22 @@ def extract_url(text: str) -> Optional[str]:
 
 
 async def crawl_url_async(url: str) -> Optional[str]:
-    """用 Playwright 异步爬取 URL"""
+    """用 httpx 异步抓取 URL 并提取正文"""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/125.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
     try:
-        from playwright.async_api import async_playwright
-
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            await page.goto(url, timeout=15000, wait_until="domcontentloaded")
-            try:
-                await page.wait_for_load_state("networkidle", timeout=10000)
-            except Exception:
-                pass
-            for _ in range(5):
-                await page.evaluate("window.scrollBy(0, 1000)")
-                await page.wait_for_timeout(500)
-            await page.evaluate("window.scrollTo(0, 0)")
-            html = await page.content()
-            await browser.close()
-
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code != 200:
+                return None
+            html = resp.text
         text = extract_text_from_html(html)
         return text
     except Exception as e:

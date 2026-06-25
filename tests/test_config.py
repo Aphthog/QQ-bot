@@ -8,7 +8,6 @@ class TestConfig:
         cfg = Config()
         assert cfg.BOT_NAME == "小y"
         assert cfg.LLM_PROVIDER == "glm"
-        assert cfg.SEARCH_BACKEND == "searxng"
         assert cfg.AGENT_MAX_PLAN_STEPS == 5
         assert cfg.AGENT_MAX_RETRY == 2
         assert cfg.AGENT_TOOL_TIMEOUT == 15

@@ -12,7 +12,7 @@ logger = logging.getLogger("qq_bot.tools")
 
 
 class ToolInfo:
-    __slots__ = ("name", "description", "params", "category", "require_auth", "handler")
+    __slots__ = ("name", "description", "params", "category", "require_auth", "handler", "timeout")
 
     def __init__(
         self,
@@ -22,6 +22,7 @@ class ToolInfo:
         category: str,
         require_auth: bool,
         handler: Callable,
+        timeout: float | None = None,
     ):
         self.name = name
         self.description = description
@@ -29,6 +30,7 @@ class ToolInfo:
         self.category = category
         self.require_auth = require_auth
         self.handler = handler
+        self.timeout = timeout
 
     def to_openai_schema(self) -> dict[str, Any]:
         sig = inspect.signature(self.handler)
@@ -87,7 +89,7 @@ class ToolRegistry:
         try:
             result = await asyncio.wait_for(
                 info.handler(**{k: v for k, v in merged.items() if k in info.params}),
-                timeout=config.AGENT_TOOL_TIMEOUT,
+                timeout=info.timeout or config.AGENT_TOOL_TIMEOUT,
             )
             return str(result) if result is not None else ""
         except asyncio.TimeoutError:
@@ -117,8 +119,12 @@ def tool(
     *,
     category: str = "core",
     require_auth: bool = False,
+    timeout: float | None = None,
 ):
-    """Decorator: register an async function as an agent tool."""
+    """Decorator: register an async function as an agent tool.
+
+    *timeout* overrides config.AGENT_TOOL_TIMEOUT for this tool (seconds).
+    """
     def decorator(fn: Callable):
         info = ToolInfo(
             name=name,
@@ -127,6 +133,7 @@ def tool(
             category=category,
             require_auth=require_auth,
             handler=fn,
+            timeout=timeout,
         )
         ToolRegistry.register(info)
         return fn

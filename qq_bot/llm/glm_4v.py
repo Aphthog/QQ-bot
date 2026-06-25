@@ -1,4 +1,4 @@
-"""GLM-4.6V provider via Zhipu AI API."""
+"""GLM provider via Zhipu AI API. Supports GLM-5V-Turbo, GLM-5.2, GLM-4.7, GLM-4.6V."""
 from __future__ import annotations
 
 import json
@@ -12,8 +12,8 @@ from qq_bot.config import config
 logger = logging.getLogger("qq_bot.llm.glm")
 
 
-class GLM4VProvider:
-    """GLM-4.6V multimodal provider with native tool calling."""
+class GLMProvider:
+    """Zhipu AI GLM provider with native tool calling, thinking, and search."""
 
     def __init__(
         self,
@@ -45,6 +45,8 @@ class GLM4VProvider:
         tool_choice: str = "auto",
         max_tokens: int = 1024,
         temperature: float = 0.7,
+        enable_search: bool = False,
+        thinking: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -52,8 +54,13 @@ class GLM4VProvider:
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
-        if tools:
-            payload["tools"] = tools
+        if thinking is not None:
+            payload["thinking"] = thinking
+        all_tools = list(tools) if tools else []
+        if enable_search:
+            all_tools.append({"type": "web_search", "web_search": {"enable": True}})
+        if all_tools:
+            payload["tools"] = all_tools
             payload["tool_choice"] = tool_choice
         return payload
 
@@ -86,7 +93,10 @@ class GLM4VProvider:
         **kwargs: Any,
     ) -> str:
         payload = self._build_payload(
-            messages, max_tokens=max_tokens, temperature=temperature,
+            messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            thinking={"type": "disabled"},
         )
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
@@ -105,10 +115,17 @@ class GLM4VProvider:
         *,
         tool_choice: str = "auto",
         max_tokens: int = 1024,
+        enable_thinking: bool = True,
         **kwargs: Any,
     ) -> dict[str, Any]:
+        thinking = {"type": "enabled"} if enable_thinking else {"type": "disabled"}
         payload = self._build_payload(
-            messages, tools=tools, tool_choice=tool_choice, max_tokens=max_tokens,
+            messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            max_tokens=max_tokens,
+            enable_search=True,
+            thinking=thinking,
         )
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
@@ -126,7 +143,11 @@ class GLM4VProvider:
         max_tokens: int = 1024,
         **kwargs: Any,
     ) -> AsyncGenerator[str, None]:
-        payload = self._build_payload(messages, max_tokens=max_tokens)
+        payload = self._build_payload(
+            messages,
+            max_tokens=max_tokens,
+            thinking={"type": "disabled"},
+        )
         payload["stream"] = True
         headers = self._auth_headers()
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -145,3 +166,7 @@ class GLM4VProvider:
                                 yield delta["content"]
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
+
+
+# Backwards compatibility alias
+GLM4VProvider = GLMProvider
